@@ -14,6 +14,12 @@ from torch.utils.data import DataLoader, Dataset, random_split
 
 from homework1 import Hw1Env
 
+try:
+    from tqdm import tqdm
+except ImportError:
+    def tqdm(iterable, **kwargs):
+        return iterable
+
 
 N_ACTIONS = 4
 IMG_SIZE = 128
@@ -46,7 +52,7 @@ def _collect_worker(worker_id: int, n_samples: int, out_dir: str, seed: int) -> 
     pos_after = torch.zeros((n_samples, 2), dtype=torch.float32)
     imgs_after = torch.zeros((n_samples, *IMG_SHAPE), dtype=torch.uint8)
 
-    for i in range(n_samples):
+    for i in tqdm(range(n_samples), desc=f"collect[w{worker_id}]", leave=False):
         env.reset()
         _, img_before = env.state()
         action_id = int(np.random.randint(N_ACTIONS))
@@ -210,14 +216,14 @@ class PositionCNN(nn.Module):
         return self.head(feat)
 
 
-def evaluate(model: nn.Module, loader, device: torch.device) -> Dict[str, float]:
+def evaluate(model: nn.Module, loader, device: torch.device, desc: str = "eval") -> Dict[str, float]:
     model.eval()
     total_mse = 0.0
     total_mae = 0.0
     total_count = 0
 
     with torch.no_grad():
-        for batch in loader:
+        for batch in tqdm(loader, desc=desc, leave=False):
             img_before = batch["img_before"].to(device)
             action_onehot = batch["action_onehot"].to(device)
             target = batch["pos_after"].to(device)
@@ -256,12 +262,12 @@ def train(
     best_val = float("inf")
     history: List[Dict[str, float]] = []
 
-    for epoch in range(1, epochs + 1):
+    for epoch in tqdm(range(1, epochs + 1), desc="epochs", leave=True):
         model.train()
         train_loss_sum = 0.0
         train_count = 0
 
-        for batch in loaders.train:
+        for batch in tqdm(loaders.train, desc=f"train e{epoch}", leave=False):
             img_before = batch["img_before"].to(dev)
             action_onehot = batch["action_onehot"].to(dev)
             target = batch["pos_after"].to(dev)
@@ -275,7 +281,7 @@ def train(
             train_count += img_before.size(0)
 
         train_loss = train_loss_sum / max(train_count, 1)
-        val_metrics = evaluate(model, loaders.val, dev)
+        val_metrics = evaluate(model, loaders.val, dev, desc=f"val e{epoch}")
         history.append({"epoch": epoch, "train_mse": train_loss, "val_mse": val_metrics["mse"]})
         print(
             f"[CNN] epoch={epoch}/{epochs} train_mse={train_loss:.6f} "
@@ -317,7 +323,7 @@ def test(
 
     model = PositionCNN().to(dev)
     model.load_state_dict(torch.load(checkpoint_path, map_location=dev))
-    metrics = evaluate(model, loaders.test, dev)
+    metrics = evaluate(model, loaders.test, dev, desc="test")
     print(f"[CNN] test metrics: {metrics}")
 
     payload: Dict[str, object] = {"test": metrics}
@@ -336,6 +342,7 @@ def collect(
     cleanup: bool = False,
 ) -> Path:
     set_seeds(seed)
+    print(f"[collect] num_samples={num_samples}, workers={workers}, out_dir={out_dir}")
     merged_path = collect_dataset(
         num_samples=num_samples,
         workers=workers,
