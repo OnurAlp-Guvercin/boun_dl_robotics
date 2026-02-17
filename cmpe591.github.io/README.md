@@ -8,10 +8,9 @@ This repository includes an implementation for Assignment 1 deliverables:
 
 ## Files
 
-- `src/hw1_data.py`: dataset collection and loading utilities
-- `src/hw1_mlp_position.py`: deliverable 1 (has `train()` and `test()`)
-- `src/hw1_cnn_position.py`: deliverable 2 (has `train()` and `test()`)
-- `src/hw1_reconstruction.py`: deliverable 3 (has `train()` and `test()`)
+- `src/hw1_mlp_position.py`: deliverable 1 (has `collect()`, `train()`, `test()`)
+- `src/hw1_cnn_position.py`: deliverable 2 (has `collect()`, `train()`, `test()`)
+- `src/hw1_reconstruction.py`: deliverable 3 (has `collect()`, `train()`, `test()`)
 
 ## Environment
 
@@ -27,7 +26,7 @@ cd cmpe591.github.io\src
 This collects tuples `(img_before, action_id, pos_after, img_after)`.
 
 ```powershell
-python hw1_data.py --num-samples 1000 --workers 4 --out-dir data/hw1 --seed 42
+python hw1_mlp_position.py collect --num-samples 1000 --workers 4 --out-dir data/hw1 --seed 42
 ```
 
 Output:
