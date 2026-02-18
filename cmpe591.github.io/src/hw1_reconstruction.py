@@ -31,19 +31,20 @@ N_ACTIONS = 4
 IMG_SIZE = 128
 IMG_SHAPE = (3, IMG_SIZE, IMG_SIZE)
 
-DEFAULT_NUM_SAMPLES = 1000
 DEFAULT_WORKERS = 1
 DEFAULT_DATA_PATH = "data/hw1"
 DEFAULT_RUN_DIR = "runs/hw1/reconstruction"
-DEFAULT_EPOCHS = 25
+DEFAULT_EPOCHS = 35
 DEFAULT_BATCH_SIZE = 32
-DEFAULT_LR = 3e-4
+DEFAULT_LR = 1e-4
 DEFAULT_WEIGHT_DECAY = 1e-4
 DEFAULT_GRAD_CLIP = 1.0
-DEFAULT_LR_SCHED_FACTOR = 0.5
-DEFAULT_LR_SCHED_PATIENCE = 3
+DEFAULT_WARMUP_EPOCHS = 5
+DEFAULT_MIN_LR_RATIO = 0.3
 DEFAULT_VAL_RATIO = 0.1
 DEFAULT_TEST_RATIO = 0.1
+DEFAULT_TRAIN_SAMPLES = 1000
+DEFAULT_NUM_SAMPLES = int(DEFAULT_TRAIN_SAMPLES / (1.0 - DEFAULT_VAL_RATIO - DEFAULT_TEST_RATIO))
 DEFAULT_SEED = 42
 DEFAULT_DEVICE = "auto"
 
@@ -55,7 +56,7 @@ SPLIT_META_FILE = "hw1_split_meta.json"
 CMD_COLLECT = "collect"
 CMD_TRAIN = "train"
 CMD_TEST = "test"
-DEFAULT_COMMAND = CMD_COLLECT
+DEFAULT_COMMAND = CMD_TEST
 
 
 def resolve_device(device_arg: str) -> torch.device:
@@ -479,8 +480,8 @@ def train(
     lr: float = DEFAULT_LR,
     weight_decay: float = DEFAULT_WEIGHT_DECAY,
     grad_clip: float = DEFAULT_GRAD_CLIP,
-    lr_sched_factor: float = DEFAULT_LR_SCHED_FACTOR,
-    lr_sched_patience: int = DEFAULT_LR_SCHED_PATIENCE,
+    warmup_epochs: int = DEFAULT_WARMUP_EPOCHS,
+    min_lr_ratio: float = DEFAULT_MIN_LR_RATIO,
     val_ratio: float = DEFAULT_VAL_RATIO,
     test_ratio: float = DEFAULT_TEST_RATIO,
     seed: int = DEFAULT_SEED,
@@ -501,12 +502,33 @@ def train(
 
     model = ActionConditionedReconstructor().to(dev)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer,
-        mode="min",
-        factor=lr_sched_factor,
-        patience=lr_sched_patience,
-    )
+    warmup_epochs = max(0, min(warmup_epochs, max(epochs - 1, 0)))
+    cosine_epochs = max(1, epochs - warmup_epochs)
+    min_lr = lr * max(0.0, min(min_lr_ratio, 1.0))
+    if warmup_epochs > 0:
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[
+                torch.optim.lr_scheduler.LinearLR(
+                    optimizer,
+                    start_factor=0.3,
+                    end_factor=1.0,
+                    total_iters=warmup_epochs,
+                ),
+                torch.optim.lr_scheduler.CosineAnnealingLR(
+                    optimizer,
+                    T_max=cosine_epochs,
+                    eta_min=min_lr,
+                ),
+            ],
+            milestones=[warmup_epochs],
+        )
+    else:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=cosine_epochs,
+            eta_min=min_lr,
+        )
 
     best_val = float("inf")
     history: List[Dict[str, float]] = []
@@ -545,11 +567,10 @@ def train(
                 }
             )
 
+        curr_lr = optimizer.param_groups[0]["lr"]
         train_loss = train_loss_sum / max(train_count, 1)
         train_mse = train_mse_sum / max(train_count, 1)
         val_metrics = evaluate(model, loaders.val, dev, desc=f"val e{epoch}")
-        scheduler.step(val_metrics["mse"])
-        curr_lr = optimizer.param_groups[0]["lr"]
         history.append(
             {
                 "epoch": epoch,
@@ -568,20 +589,21 @@ def train(
         if val_metrics["mse"] < best_val:
             best_val = val_metrics["mse"]
             torch.save(model.state_dict(), out_dir / "best.pt")
+        scheduler.step()
 
-    test_metrics = test(
-        data_path=data_path,
-        checkpoint_path=str(out_dir / "best.pt"),
-        batch_size=batch_size,
-        val_ratio=val_ratio,
-        test_ratio=test_ratio,
-        seed=seed,
-        device=device,
-        run_dir=run_dir,
-        history=history,
-        step_history=step_history,
-    )
-    return test_metrics
+    with open(out_dir / "train_metrics.json", "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "best_val_mse": best_val,
+                "history": history,
+                "step_history": step_history,
+            },
+            f,
+            indent=2,
+        )
+    save_loss_plots(out_dir=out_dir, step_history=step_history, history=history)
+    print("[RECON] training completed. Run test command separately to evaluate on test split.")
+    return {"best_val_mse": best_val}
 
 
 def test(
@@ -688,8 +710,8 @@ def main() -> None:
     p_train.add_argument("--lr", type=float, default=DEFAULT_LR)
     p_train.add_argument("--weight-decay", type=float, default=DEFAULT_WEIGHT_DECAY)
     p_train.add_argument("--grad-clip", type=float, default=DEFAULT_GRAD_CLIP)
-    p_train.add_argument("--lr-sched-factor", type=float, default=DEFAULT_LR_SCHED_FACTOR)
-    p_train.add_argument("--lr-sched-patience", type=int, default=DEFAULT_LR_SCHED_PATIENCE)
+    p_train.add_argument("--warmup-epochs", type=int, default=DEFAULT_WARMUP_EPOCHS)
+    p_train.add_argument("--min-lr-ratio", type=float, default=DEFAULT_MIN_LR_RATIO)
     p_train.add_argument("--val-ratio", type=float, default=DEFAULT_VAL_RATIO)
     p_train.add_argument("--test-ratio", type=float, default=DEFAULT_TEST_RATIO)
     p_train.add_argument("--seed", type=int, default=DEFAULT_SEED)
@@ -730,8 +752,8 @@ def main() -> None:
             lr=getattr(args, "lr", DEFAULT_LR),
             weight_decay=getattr(args, "weight_decay", DEFAULT_WEIGHT_DECAY),
             grad_clip=getattr(args, "grad_clip", DEFAULT_GRAD_CLIP),
-            lr_sched_factor=getattr(args, "lr_sched_factor", DEFAULT_LR_SCHED_FACTOR),
-            lr_sched_patience=getattr(args, "lr_sched_patience", DEFAULT_LR_SCHED_PATIENCE),
+            warmup_epochs=getattr(args, "warmup_epochs", DEFAULT_WARMUP_EPOCHS),
+            min_lr_ratio=getattr(args, "min_lr_ratio", DEFAULT_MIN_LR_RATIO),
             val_ratio=getattr(args, "val_ratio", DEFAULT_VAL_RATIO),
             test_ratio=getattr(args, "test_ratio", DEFAULT_TEST_RATIO),
             seed=getattr(args, "seed", DEFAULT_SEED),
