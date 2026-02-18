@@ -20,6 +20,11 @@ except ImportError:
     def tqdm(iterable, **kwargs):
         return iterable
 
+try:
+    import matplotlib.pyplot as plt
+except ImportError:
+    plt = None
+
 
 N_ACTIONS = 4
 IMG_SIZE = 128
@@ -31,7 +36,12 @@ DEFAULT_DATA_PATH = "data/hw1"
 DEFAULT_RUN_DIR = "runs/hw1/cnn_pos"
 DEFAULT_EPOCHS = 25
 DEFAULT_BATCH_SIZE = 32
-DEFAULT_LR = 1e-3
+DEFAULT_LR = 3e-4
+DEFAULT_WEIGHT_DECAY = 1e-4
+DEFAULT_GRAD_CLIP = 1.0
+DEFAULT_HUBER_BETA = 0.05
+DEFAULT_LR_SCHED_FACTOR = 0.5
+DEFAULT_LR_SCHED_PATIENCE = 3
 DEFAULT_SEED = 42
 DEFAULT_DEVICE = "auto"
 
@@ -254,12 +264,56 @@ def evaluate(model: nn.Module, loader, device: torch.device, desc: str = "eval")
     return {"mse": mse, "mae": mae, "rmse": rmse}
 
 
+def save_loss_plots(
+    out_dir: Path,
+    step_history: Optional[List[Dict[str, float]]],
+    history: Optional[List[Dict[str, float]]],
+) -> None:
+    if plt is None:
+        return
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if step_history:
+        steps = [int(x["step"]) for x in step_history]
+        losses = [float(x.get("train_loss", x.get("train_mse", 0.0))) for x in step_history]
+        plt.figure(figsize=(8, 4))
+        plt.plot(steps, losses, linewidth=1.2)
+        plt.xlabel("Step")
+        plt.ylabel("Train Loss")
+        plt.title("CNN Train Loss (Step)")
+        plt.grid(alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(out_dir / "loss_step_plot.png", dpi=150)
+        plt.close()
+
+    if history:
+        epochs = [int(x["epoch"]) for x in history]
+        train_vals = [float(x.get("train_loss", x.get("train_mse", 0.0))) for x in history]
+        val_vals = [float(x["val_mse"]) for x in history]
+        plt.figure(figsize=(8, 4))
+        plt.plot(epochs, train_vals, label="train_loss", linewidth=1.5)
+        plt.plot(epochs, val_vals, label="val_mse", linewidth=1.5)
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.title("CNN Train/Val Loss (Epoch)")
+        plt.grid(alpha=0.3)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(out_dir / "loss_epoch_plot.png", dpi=150)
+        plt.close()
+
+
 def train(
     data_path: str = DEFAULT_DATA_PATH,
     run_dir: str = DEFAULT_RUN_DIR,
     epochs: int = DEFAULT_EPOCHS,
     batch_size: int = DEFAULT_BATCH_SIZE,
     lr: float = DEFAULT_LR,
+    weight_decay: float = DEFAULT_WEIGHT_DECAY,
+    grad_clip: float = DEFAULT_GRAD_CLIP,
+    huber_beta: float = DEFAULT_HUBER_BETA,
+    lr_sched_factor: float = DEFAULT_LR_SCHED_FACTOR,
+    lr_sched_patience: int = DEFAULT_LR_SCHED_PATIENCE,
     seed: int = DEFAULT_SEED,
     device: str = DEFAULT_DEVICE,
 ) -> Dict[str, float]:
@@ -272,14 +326,24 @@ def train(
     loaders = build_loaders(dataset, batch_size=batch_size, seed=seed)
 
     model = PositionCNN().to(dev)
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer,
+        mode="min",
+        factor=lr_sched_factor,
+        patience=lr_sched_patience,
+    )
+    loss_fn = nn.SmoothL1Loss(beta=huber_beta)
 
     best_val = float("inf")
     history: List[Dict[str, float]] = []
+    step_history: List[Dict[str, float]] = []
+    global_step = 0
 
     for epoch in tqdm(range(1, epochs + 1), desc="epochs", leave=True):
         model.train()
         train_loss_sum = 0.0
+        train_mse_sum = 0.0
         train_count = 0
 
         for batch in tqdm(loaders.train, desc=f"train e{epoch}", leave=False):
@@ -287,20 +351,44 @@ def train(
             action_onehot = batch["action_onehot"].to(dev)
             target = batch["pos_after"].to(dev)
             pred = model(img_before, action_onehot)
-            loss = F.mse_loss(pred, target)
+            loss = loss_fn(pred, target)
+            batch_mse = F.mse_loss(pred, target)
             optimizer.zero_grad()
             loss.backward()
+            if grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=grad_clip)
             optimizer.step()
+            global_step += 1
 
             train_loss_sum += loss.item() * img_before.size(0)
+            train_mse_sum += batch_mse.item() * img_before.size(0)
             train_count += img_before.size(0)
+            step_history.append(
+                {
+                    "step": global_step,
+                    "epoch": epoch,
+                    "train_loss": float(loss.item()),
+                    "train_mse": float(batch_mse.item()),
+                }
+            )
 
         train_loss = train_loss_sum / max(train_count, 1)
+        train_mse = train_mse_sum / max(train_count, 1)
         val_metrics = evaluate(model, loaders.val, dev, desc=f"val e{epoch}")
-        history.append({"epoch": epoch, "train_mse": train_loss, "val_mse": val_metrics["mse"]})
+        scheduler.step(val_metrics["mse"])
+        curr_lr = optimizer.param_groups[0]["lr"]
+        history.append(
+            {
+                "epoch": epoch,
+                "lr": curr_lr,
+                "train_loss": train_loss,
+                "train_mse": train_mse,
+                "val_mse": val_metrics["mse"],
+            }
+        )
         print(
-            f"[CNN] epoch={epoch}/{epochs} train_mse={train_loss:.6f} "
-            f"val_mse={val_metrics['mse']:.6f} val_rmse={val_metrics['rmse']:.6f}"
+            f"[CNN] epoch={epoch}/{epochs} train_loss={train_loss:.6f} train_mse={train_mse:.6f} "
+            f"val_mse={val_metrics['mse']:.6f} val_rmse={val_metrics['rmse']:.6f} lr={curr_lr:.2e}"
         )
 
         if val_metrics["mse"] < best_val:
@@ -315,6 +403,7 @@ def train(
         device=device,
         run_dir=run_dir,
         history=history,
+        step_history=step_history,
     )
     return test_metrics
 
@@ -327,6 +416,7 @@ def test(
     device: str = DEFAULT_DEVICE,
     run_dir: str = DEFAULT_RUN_DIR,
     history: Optional[List[Dict[str, float]]] = None,
+    step_history: Optional[List[Dict[str, float]]] = None,
 ) -> Dict[str, float]:
     set_seeds(seed)
     out_dir = Path(run_dir)
@@ -344,8 +434,11 @@ def test(
     payload: Dict[str, object] = {"test": metrics}
     if history is not None:
         payload["history"] = history
+    if step_history is not None:
+        payload["step_history"] = step_history
     with open(out_dir / "metrics.json", "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
+    save_loss_plots(out_dir=out_dir, step_history=step_history, history=history)
     return metrics
 
 
@@ -388,6 +481,11 @@ def main() -> None:
     p_train.add_argument("--epochs", type=int, default=DEFAULT_EPOCHS)
     p_train.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     p_train.add_argument("--lr", type=float, default=DEFAULT_LR)
+    p_train.add_argument("--weight-decay", type=float, default=DEFAULT_WEIGHT_DECAY)
+    p_train.add_argument("--grad-clip", type=float, default=DEFAULT_GRAD_CLIP)
+    p_train.add_argument("--huber-beta", type=float, default=DEFAULT_HUBER_BETA)
+    p_train.add_argument("--lr-sched-factor", type=float, default=DEFAULT_LR_SCHED_FACTOR)
+    p_train.add_argument("--lr-sched-patience", type=int, default=DEFAULT_LR_SCHED_PATIENCE)
     p_train.add_argument("--seed", type=int, default=DEFAULT_SEED)
     p_train.add_argument("--device", type=str, default=DEFAULT_DEVICE)
 
@@ -418,6 +516,11 @@ def main() -> None:
             epochs=getattr(args, "epochs", DEFAULT_EPOCHS),
             batch_size=getattr(args, "batch_size", DEFAULT_BATCH_SIZE),
             lr=getattr(args, "lr", DEFAULT_LR),
+            weight_decay=getattr(args, "weight_decay", DEFAULT_WEIGHT_DECAY),
+            grad_clip=getattr(args, "grad_clip", DEFAULT_GRAD_CLIP),
+            huber_beta=getattr(args, "huber_beta", DEFAULT_HUBER_BETA),
+            lr_sched_factor=getattr(args, "lr_sched_factor", DEFAULT_LR_SCHED_FACTOR),
+            lr_sched_patience=getattr(args, "lr_sched_patience", DEFAULT_LR_SCHED_PATIENCE),
             seed=getattr(args, "seed", DEFAULT_SEED),
             device=getattr(args, "device", DEFAULT_DEVICE),
         )
