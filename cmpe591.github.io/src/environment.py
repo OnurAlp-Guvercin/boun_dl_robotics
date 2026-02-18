@@ -1,5 +1,38 @@
 import collections
+import ctypes.util
+import os
+import warnings
 from copy import deepcopy
+from pathlib import Path
+
+
+def _has_display() -> bool:
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
+def _pick_headless_backend() -> str:
+    # Prefer EGL; fallback to OSMesa if EGL is unavailable.
+    return "egl" if ctypes.util.find_library("EGL") else "osmesa"
+
+
+def _configure_mujoco_backend() -> None:
+    # Respect explicit user configuration.
+    user_backend = os.environ.get("MUJOCO_GL")
+    if user_backend:
+        if user_backend in ("egl", "osmesa"):
+            os.environ.setdefault("PYOPENGL_PLATFORM", user_backend)
+        return
+
+    if _has_display():
+        os.environ["MUJOCO_GL"] = "glfw"
+        return
+
+    backend = _pick_headless_backend()
+    os.environ["MUJOCO_GL"] = backend
+    os.environ.setdefault("PYOPENGL_PLATFORM", backend)
+
+
+_configure_mujoco_backend()
 
 import numpy as np
 from dm_control import mjcf
@@ -12,11 +45,16 @@ from scipy.spatial.transform import Slerp
 IKResult = collections.namedtuple(
     'IKResult', ['qpos', 'err_norm', 'steps', 'success'])
 
+SRC_DIR = Path(__file__).resolve().parent
+
 
 class BaseEnv:
     def __init__(self, render_mode="gui") -> None:
         self._gripper_idx = 6
         self._gripper_norm = 0.721
+        if render_mode == "gui" and not _has_display():
+            warnings.warn("DISPLAY not found; falling back to offscreen rendering.", RuntimeWarning)
+            render_mode = "offscreen"
         self._render_mode = render_mode
         self.viewer = None
         self._n_joints = 7
@@ -53,11 +91,19 @@ class BaseEnv:
         self.model = mujoco.MjModel.from_xml_string(xml_string, assets=assets)
         self.data = mujoco.MjData(self.model)
         if self._render_mode == "gui":
-            self.viewer = mujoco_viewer.MujocoViewer(self.model, self.data)
-            self.viewer.cam.fixedcamid = 0
-            self.viewer.cam.type = 2
-            self.viewer._render_every_frame = False
-            self.viewer._run_speed = 2
+            try:
+                self.viewer = mujoco_viewer.MujocoViewer(self.model, self.data)
+                self.viewer.cam.fixedcamid = 0
+                self.viewer.cam.type = 2
+                self.viewer._render_every_frame = False
+                self.viewer._run_speed = 2
+            except Exception as exc:
+                warnings.warn(
+                    f"GUI renderer initialization failed ({exc}); falling back to offscreen.",
+                    RuntimeWarning,
+                )
+                self._render_mode = "offscreen"
+                self.viewer = mujoco.Renderer(self.model, 128, 128)
         elif self._render_mode == "offscreen":
             self.viewer = mujoco.Renderer(self.model, 128, 128)
 
@@ -216,8 +262,10 @@ def create_empty_scene():
 
 
 def create_ur5e_robotiq85f():
-    robot = mjcf.from_path("mujoco_menagerie/universal_robots_ur5e/ur5e.xml")
-    gripper = mjcf.from_path("mujoco_menagerie/robotiq_2f85/2f85.xml")
+    robot_xml = SRC_DIR / "mujoco_menagerie" / "universal_robots_ur5e" / "ur5e.xml"
+    gripper_xml = SRC_DIR / "mujoco_menagerie" / "robotiq_2f85" / "2f85.xml"
+    robot = mjcf.from_path(str(robot_xml))
+    gripper = mjcf.from_path(str(gripper_xml))
     gripper.worldbody.add("site", name="gripper_site", pos=[0, 0, 0.15], size=[0.01, 0.01, 0.01], rgba=[1, 0, 0, 0])
     robot.find("site", "attachment_site").attach(gripper)
     return robot

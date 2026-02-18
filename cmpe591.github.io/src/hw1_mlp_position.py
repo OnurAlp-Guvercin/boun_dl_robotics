@@ -1,6 +1,7 @@
 import argparse
 import json
 import math
+import traceback
 from dataclasses import dataclass
 from multiprocessing import Process
 from pathlib import Path
@@ -22,8 +23,23 @@ except ImportError:
 
 
 N_ACTIONS = 4
-IMG_SIZE = 128
+IMG_SIZE = 1
 IMG_SHAPE = (3, IMG_SIZE, IMG_SIZE)
+
+DEFAULT_NUM_SAMPLES = 1000
+DEFAULT_WORKERS = 128
+DEFAULT_DATA_PATH = "data/hw1"
+DEFAULT_RUN_DIR = "runs/hw1/mlp_pos"
+DEFAULT_EPOCHS = 25
+DEFAULT_BATCH_SIZE = 32
+DEFAULT_LR = 1e-3
+DEFAULT_SEED = 42
+DEFAULT_DEVICE = "auto"
+
+CMD_COLLECT = "collect"
+CMD_TRAIN = "train"
+CMD_TEST = "test"
+DEFAULT_COMMAND = CMD_COLLECT
 
 
 def resolve_device(device_arg: str) -> torch.device:
@@ -45,32 +61,38 @@ def _collect_worker(worker_id: int, n_samples: int, out_dir: str, seed: int) -> 
     set_seeds(seed + worker_id)
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
+    error_log = out_path / f"hw1_worker_{worker_id:02d}.error.log"
+    try:
+        env = Hw1Env(render_mode="offscreen")
+        imgs_before = torch.zeros((n_samples, *IMG_SHAPE), dtype=torch.uint8)
+        actions = torch.zeros((n_samples,), dtype=torch.uint8)
+        pos_after = torch.zeros((n_samples, 2), dtype=torch.float32)
+        imgs_after = torch.zeros((n_samples, *IMG_SHAPE), dtype=torch.uint8)
 
-    env = Hw1Env(render_mode="offscreen")
-    imgs_before = torch.zeros((n_samples, *IMG_SHAPE), dtype=torch.uint8)
-    actions = torch.zeros((n_samples,), dtype=torch.uint8)
-    pos_after = torch.zeros((n_samples, 2), dtype=torch.float32)
-    imgs_after = torch.zeros((n_samples, *IMG_SHAPE), dtype=torch.uint8)
+        for i in tqdm(range(n_samples), desc=f"collect[w{worker_id}]", leave=False):
+            env.reset()
+            _, img_before = env.state()
+            action_id = int(np.random.randint(N_ACTIONS))
+            env.step(action_id)
+            obj_pos_after, img_after = env.state()
 
-    for i in tqdm(range(n_samples), desc=f"collect[w{worker_id}]", leave=False):
-        env.reset()
-        _, img_before = env.state()
-        action_id = int(np.random.randint(N_ACTIONS))
-        env.step(action_id)
-        obj_pos_after, img_after = env.state()
+            imgs_before[i] = img_before
+            actions[i] = action_id
+            pos_after[i] = torch.tensor(obj_pos_after, dtype=torch.float32)
+            imgs_after[i] = img_after
 
-        imgs_before[i] = img_before
-        actions[i] = action_id
-        pos_after[i] = torch.tensor(obj_pos_after, dtype=torch.float32)
-        imgs_after[i] = img_after
-
-    shard = {
-        "imgs_before": imgs_before,
-        "actions": actions,
-        "pos_after": pos_after,
-        "imgs_after": imgs_after,
-    }
-    torch.save(shard, out_path / f"hw1_shard_{worker_id:02d}.pt")
+        shard = {
+            "imgs_before": imgs_before,
+            "actions": actions,
+            "pos_after": pos_after,
+            "imgs_after": imgs_after,
+        }
+        torch.save(shard, out_path / f"hw1_shard_{worker_id:02d}.pt")
+        error_log.unlink(missing_ok=True)
+    except Exception:
+        tb = traceback.format_exc()
+        error_log.write_text(tb, encoding="utf-8")
+        raise
 
 
 def merge_shards(data_dir: Path, cleanup: bool = False) -> Path:
@@ -108,14 +130,21 @@ def collect_dataset(num_samples: int, workers: int, out_dir: Path, seed: int, cl
     if workers == 1:
         _collect_worker(worker_id=0, n_samples=per_worker[0], out_dir=str(out_dir), seed=seed)
     else:
-        procs: List[Process] = []
+        procs: List[Tuple[int, Process]] = []
         for i, n in enumerate(per_worker):
             p = Process(target=_collect_worker, args=(i, n, str(out_dir), seed))
             p.start()
-            procs.append(p)
-        for p in procs:
+            procs.append((i, p))
+        for worker_id, p in procs:
             p.join()
             if p.exitcode != 0:
+                err_path = out_dir / f"hw1_worker_{worker_id:02d}.error.log"
+                if err_path.exists():
+                    err_text = err_path.read_text(encoding="utf-8")
+                    raise RuntimeError(
+                        f"Collector worker failed with exit code {p.exitcode}.\n"
+                        f"Worker traceback:\n{err_text}"
+                    )
                 raise RuntimeError(f"Collector worker failed with exit code {p.exitcode}")
 
     return merge_shards(out_dir, cleanup=cleanup)
@@ -232,13 +261,13 @@ def evaluate(model: nn.Module, loader, device: torch.device, desc: str = "eval")
 
 
 def train(
-    data_path: str = "data/hw1",
-    run_dir: str = "runs/hw1/mlp_pos",
-    epochs: int = 25,
-    batch_size: int = 32,
-    lr: float = 1e-3,
-    seed: int = 42,
-    device: str = "auto",
+    data_path: str = DEFAULT_DATA_PATH,
+    run_dir: str = DEFAULT_RUN_DIR,
+    epochs: int = DEFAULT_EPOCHS,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    lr: float = DEFAULT_LR,
+    seed: int = DEFAULT_SEED,
+    device: str = DEFAULT_DEVICE,
 ) -> Dict[str, float]:
     set_seeds(seed)
     out_dir = Path(run_dir)
@@ -297,12 +326,12 @@ def train(
 
 
 def test(
-    data_path: str = "data/hw1",
-    checkpoint_path: str = "runs/hw1/mlp_pos/best.pt",
-    batch_size: int = 32,
-    seed: int = 42,
-    device: str = "auto",
-    run_dir: str = "runs/hw1/mlp_pos",
+    data_path: str = DEFAULT_DATA_PATH,
+    checkpoint_path: str = f"{DEFAULT_RUN_DIR}/best.pt",
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    seed: int = DEFAULT_SEED,
+    device: str = DEFAULT_DEVICE,
+    run_dir: str = DEFAULT_RUN_DIR,
     history: Optional[List[Dict[str, float]]] = None,
 ) -> Dict[str, float]:
     set_seeds(seed)
@@ -327,10 +356,10 @@ def test(
 
 
 def collect(
-    num_samples: int = 1000,
-    workers: int = 4,
-    out_dir: str = "data/hw1",
-    seed: int = 42,
+    num_samples: int = DEFAULT_NUM_SAMPLES,
+    workers: int = DEFAULT_WORKERS,
+    out_dir: str = DEFAULT_DATA_PATH,
+    seed: int = DEFAULT_SEED,
     cleanup: bool = False,
 ) -> Path:
     set_seeds(seed)
@@ -350,59 +379,62 @@ def collect(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Homework 1 - MLP position prediction.")
-    sub = parser.add_subparsers(dest="command", required=True)
+    sub = parser.add_subparsers(dest="command", required=False)
 
-    p_collect = sub.add_parser("collect")
-    p_collect.add_argument("--num-samples", type=int, default=1000)
-    p_collect.add_argument("--workers", type=int, default=4)
-    p_collect.add_argument("--out-dir", type=str, default="data/hw1")
-    p_collect.add_argument("--seed", type=int, default=42)
+    p_collect = sub.add_parser(CMD_COLLECT)
+    p_collect.add_argument("--num-samples", type=int, default=DEFAULT_NUM_SAMPLES)
+    p_collect.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
+    p_collect.add_argument("--out-dir", type=str, default=DEFAULT_DATA_PATH)
+    p_collect.add_argument("--seed", type=int, default=DEFAULT_SEED)
     p_collect.add_argument("--cleanup", action="store_true")
 
-    p_train = sub.add_parser("train")
-    p_train.add_argument("--data-path", type=str, default="data/hw1")
-    p_train.add_argument("--run-dir", type=str, default="runs/hw1/mlp_pos")
-    p_train.add_argument("--epochs", type=int, default=25)
-    p_train.add_argument("--batch-size", type=int, default=32)
-    p_train.add_argument("--lr", type=float, default=1e-3)
-    p_train.add_argument("--seed", type=int, default=42)
-    p_train.add_argument("--device", type=str, default="auto")
+    p_train = sub.add_parser(CMD_TRAIN)
+    p_train.add_argument("--data-path", type=str, default=DEFAULT_DATA_PATH)
+    p_train.add_argument("--run-dir", type=str, default=DEFAULT_RUN_DIR)
+    p_train.add_argument("--epochs", type=int, default=DEFAULT_EPOCHS)
+    p_train.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
+    p_train.add_argument("--lr", type=float, default=DEFAULT_LR)
+    p_train.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    p_train.add_argument("--device", type=str, default=DEFAULT_DEVICE)
 
-    p_test = sub.add_parser("test")
-    p_test.add_argument("--data-path", type=str, default="data/hw1")
-    p_test.add_argument("--checkpoint-path", type=str, default="runs/hw1/mlp_pos/best.pt")
-    p_test.add_argument("--run-dir", type=str, default="runs/hw1/mlp_pos")
-    p_test.add_argument("--batch-size", type=int, default=32)
-    p_test.add_argument("--seed", type=int, default=42)
-    p_test.add_argument("--device", type=str, default="auto")
+    p_test = sub.add_parser(CMD_TEST)
+    p_test.add_argument("--data-path", type=str, default=DEFAULT_DATA_PATH)
+    p_test.add_argument("--checkpoint-path", type=str, default=f"{DEFAULT_RUN_DIR}/best.pt")
+    p_test.add_argument("--run-dir", type=str, default=DEFAULT_RUN_DIR)
+    p_test.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
+    p_test.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    p_test.add_argument("--device", type=str, default=DEFAULT_DEVICE)
 
     args = parser.parse_args()
-    if args.command == "collect":
+    if args.command is None:
+        args.command = DEFAULT_COMMAND
+
+    if args.command == CMD_COLLECT:
         collect(
-            num_samples=args.num_samples,
-            workers=args.workers,
-            out_dir=args.out_dir,
-            seed=args.seed,
-            cleanup=args.cleanup,
+            num_samples=getattr(args, "num_samples", DEFAULT_NUM_SAMPLES),
+            workers=getattr(args, "workers", DEFAULT_WORKERS),
+            out_dir=getattr(args, "out_dir", DEFAULT_DATA_PATH),
+            seed=getattr(args, "seed", DEFAULT_SEED),
+            cleanup=getattr(args, "cleanup", False),
         )
-    elif args.command == "train":
+    elif args.command == CMD_TRAIN:
         train(
-            data_path=args.data_path,
-            run_dir=args.run_dir,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
-            lr=args.lr,
-            seed=args.seed,
-            device=args.device,
+            data_path=getattr(args, "data_path", DEFAULT_DATA_PATH),
+            run_dir=getattr(args, "run_dir", DEFAULT_RUN_DIR),
+            epochs=getattr(args, "epochs", DEFAULT_EPOCHS),
+            batch_size=getattr(args, "batch_size", DEFAULT_BATCH_SIZE),
+            lr=getattr(args, "lr", DEFAULT_LR),
+            seed=getattr(args, "seed", DEFAULT_SEED),
+            device=getattr(args, "device", DEFAULT_DEVICE),
         )
     else:
         test(
-            data_path=args.data_path,
-            checkpoint_path=args.checkpoint_path,
-            run_dir=args.run_dir,
-            batch_size=args.batch_size,
-            seed=args.seed,
-            device=args.device,
+            data_path=getattr(args, "data_path", DEFAULT_DATA_PATH),
+            checkpoint_path=getattr(args, "checkpoint_path", f"{DEFAULT_RUN_DIR}/best.pt"),
+            run_dir=getattr(args, "run_dir", DEFAULT_RUN_DIR),
+            batch_size=getattr(args, "batch_size", DEFAULT_BATCH_SIZE),
+            seed=getattr(args, "seed", DEFAULT_SEED),
+            device=getattr(args, "device", DEFAULT_DEVICE),
         )
 
 
