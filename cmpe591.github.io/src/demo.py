@@ -1,6 +1,12 @@
+import os
 import time
 
 import numpy as np
+
+_HAS_DISPLAY = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+if not _HAS_DISPLAY and "MUJOCO_GL" not in os.environ:
+    # Prevent GLFW initialization attempts in headless shells.
+    os.environ["MUJOCO_GL"] = "disable"
 
 import environment
 
@@ -79,7 +85,10 @@ class Homework2(environment.BaseEnv):
 
 if __name__ == "__main__":
     N_ACTIONS = 8
-    env = Homework2(n_actions=N_ACTIONS, render_mode="gui")
+    render_mode = "gui" if _HAS_DISPLAY else None
+    if render_mode is None:
+        print("No display detected. Running in headless mode (GUI disabled).")
+    env = Homework2(n_actions=N_ACTIONS, render_mode=render_mode)
     for episode in range(10):
         done = False
         cum_reward = 0.0
@@ -93,9 +102,10 @@ if __name__ == "__main__":
         print(f"Episode={episode}, reward={cum_reward:.2f}, RF={env.data.time/(end-start):.2f}")
         env.reset()
 
-    # render a single episode
-    done = False
-    while not done:
-        action = np.random.randint(N_ACTIONS)
-        state, reward, is_terminal, is_truncated = env.step(action)
-        done = is_terminal or is_truncated
+    if render_mode == "gui":
+        # render a single episode
+        done = False
+        while not done:
+            action = np.random.randint(N_ACTIONS)
+            state, reward, is_terminal, is_truncated = env.step(action)
+            done = is_terminal or is_truncated
