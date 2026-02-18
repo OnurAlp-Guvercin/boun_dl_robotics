@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass
 from multiprocessing import Process
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -42,8 +42,15 @@ DEFAULT_GRAD_CLIP = 1.0
 DEFAULT_HUBER_BETA = 0.05
 DEFAULT_LR_SCHED_FACTOR = 0.5
 DEFAULT_LR_SCHED_PATIENCE = 3
+DEFAULT_VAL_RATIO = 0.1
+DEFAULT_TEST_RATIO = 0.1
 DEFAULT_SEED = 42
 DEFAULT_DEVICE = "auto"
+
+SPLIT_TRAIN_FILE = "hw1_train.pt"
+SPLIT_VAL_FILE = "hw1_val.pt"
+SPLIT_TEST_FILE = "hw1_test.pt"
+SPLIT_META_FILE = "hw1_split_meta.json"
 
 CMD_COLLECT = "collect"
 CMD_TRAIN = "train"
@@ -119,7 +126,58 @@ def merge_shards(data_dir: Path, cleanup: bool = False) -> Path:
     return merged_path
 
 
-def collect_dataset(num_samples: int, workers: int, out_dir: Path, seed: int, cleanup: bool = False) -> Path:
+def save_dataset_splits(
+    dataset_path: Path,
+    seed: int,
+    val_ratio: float = DEFAULT_VAL_RATIO,
+    test_ratio: float = DEFAULT_TEST_RATIO,
+) -> Dict[str, int]:
+    data = torch.load(dataset_path, map_location="cpu")
+    n_total = int(data["actions"].shape[0])
+    n_val = max(1, int(n_total * val_ratio))
+    n_test = max(1, int(n_total * test_ratio))
+    n_train = n_total - n_val - n_test
+    if n_train <= 0:
+        raise ValueError("Not enough samples for train split.")
+
+    generator = torch.Generator().manual_seed(seed)
+    perm = torch.randperm(n_total, generator=generator)
+    train_idx = perm[:n_train]
+    val_idx = perm[n_train:n_train + n_val]
+    test_idx = perm[n_train + n_val:]
+
+    def subset(indices: torch.Tensor) -> Dict[str, torch.Tensor]:
+        return {k: v[indices] for k, v in data.items()}
+
+    data_dir = dataset_path.parent
+    torch.save(subset(train_idx), data_dir / SPLIT_TRAIN_FILE)
+    torch.save(subset(val_idx), data_dir / SPLIT_VAL_FILE)
+    torch.save(subset(test_idx), data_dir / SPLIT_TEST_FILE)
+
+    meta = {
+        "seed": seed,
+        "val_ratio": val_ratio,
+        "test_ratio": test_ratio,
+        "n_total": n_total,
+        "n_train": n_train,
+        "n_val": n_val,
+        "n_test": n_test,
+    }
+    with open(data_dir / SPLIT_META_FILE, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+    return meta
+
+
+def collect_dataset(
+    num_samples: int,
+    workers: int,
+    out_dir: Path,
+    seed: int,
+    cleanup: bool = False,
+    val_ratio: float = DEFAULT_VAL_RATIO,
+    test_ratio: float = DEFAULT_TEST_RATIO,
+    save_splits: bool = True,
+) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     if workers < 1:
         raise ValueError("workers must be >= 1")
@@ -143,7 +201,15 @@ def collect_dataset(num_samples: int, workers: int, out_dir: Path, seed: int, cl
             if p.exitcode != 0:
                 raise RuntimeError(f"Collector worker failed with exit code {p.exitcode}")
 
-    return merge_shards(out_dir, cleanup=cleanup)
+    merged_path = merge_shards(out_dir, cleanup=cleanup)
+    if save_splits:
+        save_dataset_splits(
+            dataset_path=merged_path,
+            seed=seed,
+            val_ratio=val_ratio,
+            test_ratio=test_ratio,
+        )
+    return merged_path
 
 
 class Hw1Dataset(Dataset):
@@ -179,8 +245,8 @@ def build_loaders(
     dataset: Dataset,
     batch_size: int,
     seed: int,
-    val_ratio: float = 0.1,
-    test_ratio: float = 0.1,
+    val_ratio: float = DEFAULT_VAL_RATIO,
+    test_ratio: float = DEFAULT_TEST_RATIO,
 ) -> SplitLoaders:
     if len(dataset) < 10:
         raise ValueError("Dataset is too small. Collect at least 10 samples.")
@@ -211,6 +277,37 @@ def load_hw1_dataset(data_path: Path) -> Hw1Dataset:
         dataset_path = data_path
     data = torch.load(dataset_path, map_location="cpu")
     return Hw1Dataset(data)
+
+
+def load_split_loaders(
+    data_path: Path,
+    batch_size: int,
+    seed: int,
+    val_ratio: float = DEFAULT_VAL_RATIO,
+    test_ratio: float = DEFAULT_TEST_RATIO,
+) -> SplitLoaders:
+    if data_path.is_dir():
+        train_path = data_path / SPLIT_TRAIN_FILE
+        val_path = data_path / SPLIT_VAL_FILE
+        test_path = data_path / SPLIT_TEST_FILE
+        if train_path.exists() and val_path.exists() and test_path.exists():
+            train_ds = Hw1Dataset(torch.load(train_path, map_location="cpu"))
+            val_ds = Hw1Dataset(torch.load(val_path, map_location="cpu"))
+            test_ds = Hw1Dataset(torch.load(test_path, map_location="cpu"))
+            return SplitLoaders(
+                train=DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0),
+                val=DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=0),
+                test=DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=0),
+            )
+
+    dataset = load_hw1_dataset(data_path)
+    return build_loaders(
+        dataset=dataset,
+        batch_size=batch_size,
+        seed=seed,
+        val_ratio=val_ratio,
+        test_ratio=test_ratio,
+    )
 
 
 class PositionCNN(nn.Module):
@@ -264,6 +361,54 @@ def evaluate(model: nn.Module, loader, device: torch.device, desc: str = "eval")
     return {"mse": mse, "mae": mae, "rmse": rmse}
 
 
+def evaluate_with_samples(
+    model: nn.Module,
+    loader,
+    device: torch.device,
+    desc: str = "test",
+    max_samples: int = 64,
+) -> Tuple[Dict[str, float], List[Dict[str, object]]]:
+    model.eval()
+    total_mse = 0.0
+    total_mae = 0.0
+    total_count = 0
+    samples: List[Dict[str, object]] = []
+
+    with torch.no_grad():
+        for batch in tqdm(loader, desc=desc, leave=False):
+            img_before = batch["img_before"].to(device)
+            action_onehot = batch["action_onehot"].to(device)
+            target = batch["pos_after"].to(device)
+            action_id = batch["action_id"].to(device)
+            pred = model(img_before, action_onehot)
+            b = img_before.size(0)
+            total_mse += F.mse_loss(pred, target, reduction="sum").item()
+            total_mae += F.l1_loss(pred, target, reduction="sum").item()
+            total_count += b
+
+            if len(samples) < max_samples:
+                pred_cpu = pred.detach().cpu()
+                target_cpu = target.detach().cpu()
+                action_cpu = action_id.detach().cpu()
+                for i in range(b):
+                    if len(samples) >= max_samples:
+                        break
+                    abs_err = (pred_cpu[i] - target_cpu[i]).abs()
+                    samples.append(
+                        {
+                            "action_id": int(action_cpu[i].item()),
+                            "target_pos": [float(x) for x in target_cpu[i].tolist()],
+                            "pred_pos": [float(x) for x in pred_cpu[i].tolist()],
+                            "abs_error": [float(x) for x in abs_err.tolist()],
+                        }
+                    )
+
+    mse = total_mse / (total_count * 2)
+    mae = total_mae / (total_count * 2)
+    rmse = math.sqrt(mse)
+    return {"mse": mse, "mae": mae, "rmse": rmse}, samples
+
+
 def save_loss_plots(
     out_dir: Path,
     step_history: Optional[List[Dict[str, float]]],
@@ -314,6 +459,8 @@ def train(
     huber_beta: float = DEFAULT_HUBER_BETA,
     lr_sched_factor: float = DEFAULT_LR_SCHED_FACTOR,
     lr_sched_patience: int = DEFAULT_LR_SCHED_PATIENCE,
+    val_ratio: float = DEFAULT_VAL_RATIO,
+    test_ratio: float = DEFAULT_TEST_RATIO,
     seed: int = DEFAULT_SEED,
     device: str = DEFAULT_DEVICE,
 ) -> Dict[str, float]:
@@ -322,8 +469,13 @@ def train(
     out_dir.mkdir(parents=True, exist_ok=True)
     dev = resolve_device(device)
 
-    dataset = load_hw1_dataset(Path(data_path))
-    loaders = build_loaders(dataset, batch_size=batch_size, seed=seed)
+    loaders = load_split_loaders(
+        data_path=Path(data_path),
+        batch_size=batch_size,
+        seed=seed,
+        val_ratio=val_ratio,
+        test_ratio=test_ratio,
+    )
 
     model = PositionCNN().to(dev)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -399,6 +551,8 @@ def train(
         data_path=data_path,
         checkpoint_path=str(out_dir / "best.pt"),
         batch_size=batch_size,
+        val_ratio=val_ratio,
+        test_ratio=test_ratio,
         seed=seed,
         device=device,
         run_dir=run_dir,
@@ -417,18 +571,25 @@ def test(
     run_dir: str = DEFAULT_RUN_DIR,
     history: Optional[List[Dict[str, float]]] = None,
     step_history: Optional[List[Dict[str, float]]] = None,
+    val_ratio: float = DEFAULT_VAL_RATIO,
+    test_ratio: float = DEFAULT_TEST_RATIO,
 ) -> Dict[str, float]:
     set_seeds(seed)
     out_dir = Path(run_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     dev = resolve_device(device)
 
-    dataset = load_hw1_dataset(Path(data_path))
-    loaders = build_loaders(dataset, batch_size=batch_size, seed=seed)
+    loaders = load_split_loaders(
+        data_path=Path(data_path),
+        batch_size=batch_size,
+        seed=seed,
+        val_ratio=val_ratio,
+        test_ratio=test_ratio,
+    )
 
     model = PositionCNN().to(dev)
     model.load_state_dict(torch.load(checkpoint_path, map_location=dev))
-    metrics = evaluate(model, loaders.test, dev, desc="test")
+    metrics, test_samples = evaluate_with_samples(model, loaders.test, dev, desc="test")
     print(f"[CNN] test metrics: {metrics}")
 
     payload: Dict[str, object] = {"test": metrics}
@@ -438,6 +599,8 @@ def test(
         payload["step_history"] = step_history
     with open(out_dir / "metrics.json", "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
+    with open(out_dir / "test_results.json", "w", encoding="utf-8") as f:
+        json.dump({"test": metrics, "samples": test_samples}, f, indent=2)
     save_loss_plots(out_dir=out_dir, step_history=step_history, history=history)
     return metrics
 
@@ -447,6 +610,8 @@ def collect(
     workers: int = DEFAULT_WORKERS,
     out_dir: str = DEFAULT_DATA_PATH,
     seed: int = DEFAULT_SEED,
+    val_ratio: float = DEFAULT_VAL_RATIO,
+    test_ratio: float = DEFAULT_TEST_RATIO,
     cleanup: bool = False,
 ) -> Path:
     set_seeds(seed)
@@ -457,10 +622,17 @@ def collect(
         out_dir=Path(out_dir),
         seed=seed,
         cleanup=cleanup,
+        val_ratio=val_ratio,
+        test_ratio=test_ratio,
+        save_splits=True,
     )
     data = torch.load(merged_path, map_location="cpu")
     print(f"Saved dataset to {merged_path}")
     print(f"num_samples={data['actions'].shape[0]}")
+    split_meta_path = Path(out_dir) / SPLIT_META_FILE
+    if split_meta_path.exists():
+        meta = json.loads(split_meta_path.read_text(encoding="utf-8"))
+        print(f"split counts: train={meta['n_train']} val={meta['n_val']} test={meta['n_test']}")
     return merged_path
 
 
@@ -473,6 +645,8 @@ def main() -> None:
     p_collect.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     p_collect.add_argument("--out-dir", type=str, default=DEFAULT_DATA_PATH)
     p_collect.add_argument("--seed", type=int, default=DEFAULT_SEED)
+    p_collect.add_argument("--val-ratio", type=float, default=DEFAULT_VAL_RATIO)
+    p_collect.add_argument("--test-ratio", type=float, default=DEFAULT_TEST_RATIO)
     p_collect.add_argument("--cleanup", action="store_true")
 
     p_train = sub.add_parser(CMD_TRAIN)
@@ -486,6 +660,8 @@ def main() -> None:
     p_train.add_argument("--huber-beta", type=float, default=DEFAULT_HUBER_BETA)
     p_train.add_argument("--lr-sched-factor", type=float, default=DEFAULT_LR_SCHED_FACTOR)
     p_train.add_argument("--lr-sched-patience", type=int, default=DEFAULT_LR_SCHED_PATIENCE)
+    p_train.add_argument("--val-ratio", type=float, default=DEFAULT_VAL_RATIO)
+    p_train.add_argument("--test-ratio", type=float, default=DEFAULT_TEST_RATIO)
     p_train.add_argument("--seed", type=int, default=DEFAULT_SEED)
     p_train.add_argument("--device", type=str, default=DEFAULT_DEVICE)
 
@@ -494,6 +670,8 @@ def main() -> None:
     p_test.add_argument("--checkpoint-path", type=str, default=f"{DEFAULT_RUN_DIR}/best.pt")
     p_test.add_argument("--run-dir", type=str, default=DEFAULT_RUN_DIR)
     p_test.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
+    p_test.add_argument("--val-ratio", type=float, default=DEFAULT_VAL_RATIO)
+    p_test.add_argument("--test-ratio", type=float, default=DEFAULT_TEST_RATIO)
     p_test.add_argument("--seed", type=int, default=DEFAULT_SEED)
     p_test.add_argument("--device", type=str, default=DEFAULT_DEVICE)
 
@@ -507,6 +685,8 @@ def main() -> None:
             workers=getattr(args, "workers", DEFAULT_WORKERS),
             out_dir=getattr(args, "out_dir", DEFAULT_DATA_PATH),
             seed=getattr(args, "seed", DEFAULT_SEED),
+            val_ratio=getattr(args, "val_ratio", DEFAULT_VAL_RATIO),
+            test_ratio=getattr(args, "test_ratio", DEFAULT_TEST_RATIO),
             cleanup=getattr(args, "cleanup", False),
         )
     elif args.command == CMD_TRAIN:
@@ -521,6 +701,8 @@ def main() -> None:
             huber_beta=getattr(args, "huber_beta", DEFAULT_HUBER_BETA),
             lr_sched_factor=getattr(args, "lr_sched_factor", DEFAULT_LR_SCHED_FACTOR),
             lr_sched_patience=getattr(args, "lr_sched_patience", DEFAULT_LR_SCHED_PATIENCE),
+            val_ratio=getattr(args, "val_ratio", DEFAULT_VAL_RATIO),
+            test_ratio=getattr(args, "test_ratio", DEFAULT_TEST_RATIO),
             seed=getattr(args, "seed", DEFAULT_SEED),
             device=getattr(args, "device", DEFAULT_DEVICE),
         )
@@ -530,6 +712,8 @@ def main() -> None:
             checkpoint_path=getattr(args, "checkpoint_path", f"{DEFAULT_RUN_DIR}/best.pt"),
             run_dir=getattr(args, "run_dir", DEFAULT_RUN_DIR),
             batch_size=getattr(args, "batch_size", DEFAULT_BATCH_SIZE),
+            val_ratio=getattr(args, "val_ratio", DEFAULT_VAL_RATIO),
+            test_ratio=getattr(args, "test_ratio", DEFAULT_TEST_RATIO),
             seed=getattr(args, "seed", DEFAULT_SEED),
             device=getattr(args, "device", DEFAULT_DEVICE),
         )
