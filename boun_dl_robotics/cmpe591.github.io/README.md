@@ -91,18 +91,18 @@ Reported results are read from:
 
 #### D1 - MLP Position
 
-![D1 Epoch Loss](docs/images/hw1_report/mlp_loss_epoch.png)
-![D1 Step Loss](docs/images/hw1_report/mlp_loss_step.png)
+![D1 Epoch Loss](../../runs/hw1/mlp_pos/loss_epoch_plot.png)
+![D1 Step Loss](../../runs/hw1/mlp_pos/loss_step_plot.png)
 
 #### D2 - CNN Position
 
-![D2 Epoch Loss](docs/images/hw1_report/cnn_loss_epoch.png)
-![D2 Step Loss](docs/images/hw1_report/cnn_loss_step.png)
+![D2 Epoch Loss](../../runs/hw1/cnn_pos/loss_epoch_plot.png)
+![D2 Step Loss](../../runs/hw1/cnn_pos/loss_step_plot.png)
 
 #### D3 - Reconstruction
 
-![D3 Epoch Loss](docs/images/hw1_report/recon_loss_epoch.png)
-![D3 Step Loss](docs/images/hw1_report/recon_loss_step.png)
+![D3 Epoch Loss](../../runs/hw1/reconstruction/loss_epoch_plot.png)
+![D3 Step Loss](../../runs/hw1/reconstruction/loss_step_plot.png)
 
 ### Deliverable 3 Reconstruction Samples
 
@@ -111,11 +111,11 @@ Each sample image is formatted as:
 
 | Sample 0 | Sample 1 | Sample 2 | Sample 3 |
 | --- | --- | --- | --- |
-| ![Recon Sample 0](docs/images/hw1_report/recon_sample_0000.png) | ![Recon Sample 1](docs/images/hw1_report/recon_sample_0001.png) | ![Recon Sample 2](docs/images/hw1_report/recon_sample_0002.png) | ![Recon Sample 3](docs/images/hw1_report/recon_sample_0003.png) |
+| ![Recon Sample 0](../../runs/hw1/reconstruction/reconstruction_samples/sample_0000.png) | ![Recon Sample 1](../../runs/hw1/reconstruction/reconstruction_samples/sample_0001.png) | ![Recon Sample 2](../../runs/hw1/reconstruction/reconstruction_samples/sample_0002.png) | ![Recon Sample 3](../../runs/hw1/reconstruction/reconstruction_samples/sample_0003.png) |
 
 | Sample 4 | Sample 5 | Sample 6 | Sample 7 |
 | --- | --- | --- | --- |
-| ![Recon Sample 4](docs/images/hw1_report/recon_sample_0004.png) | ![Recon Sample 5](docs/images/hw1_report/recon_sample_0005.png) | ![Recon Sample 6](docs/images/hw1_report/recon_sample_0006.png) | ![Recon Sample 7](docs/images/hw1_report/recon_sample_0007.png) |
+| ![Recon Sample 4](../../runs/hw1/reconstruction/reconstruction_samples/sample_0004.png) | ![Recon Sample 5](../../runs/hw1/reconstruction/reconstruction_samples/sample_0005.png) | ![Recon Sample 6](../../runs/hw1/reconstruction/reconstruction_samples/sample_0006.png) | ![Recon Sample 7](../../runs/hw1/reconstruction/reconstruction_samples/sample_0007.png) |
 
 ## Saved Checkpoints
 
