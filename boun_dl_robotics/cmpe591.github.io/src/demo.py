@@ -1,9 +1,14 @@
 import os
+import sys
 import time
 
 import numpy as np
 
-_HAS_DISPLAY = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+_HAS_DISPLAY = bool(
+    os.environ.get("DISPLAY")
+    or os.environ.get("WAYLAND_DISPLAY")
+    or sys.platform.startswith("win")
+)
 if not _HAS_DISPLAY and "MUJOCO_GL" not in os.environ:
     # Prevent GLFW initialization attempts in headless shells.
     os.environ["MUJOCO_GL"] = "disable"

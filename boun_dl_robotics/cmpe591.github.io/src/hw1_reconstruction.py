@@ -11,7 +11,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, random_split
-from torchvision.transforms.functional import to_pil_image
 from torchvision.utils import save_image
 
 from homework1 import Hw1Env
@@ -26,13 +25,6 @@ try:
     import matplotlib.pyplot as plt
 except ImportError:
     plt = None
-
-try:
-    from PIL import Image, ImageDraw, ImageFont
-except ImportError:
-    Image = None
-    ImageDraw = None
-    ImageFont = None
 
 
 N_ACTIONS = 4
@@ -399,40 +391,9 @@ def save_examples(model: nn.Module, loader, device: torch.device, out_dir: Path,
             for i in range(img_before.size(0)):
                 if saved >= n_samples:
                     return
-
-                before_i = img_before[i].detach().cpu().clamp(0.0, 1.0)
-                target_i = target[i].detach().cpu().clamp(0.0, 1.0)
-                pred_i = pred[i].detach().cpu().clamp(0.0, 1.0)
-
                 # side-by-side: before | ground truth after | prediction
-                if Image is None:
-                    triplet = torch.cat([before_i, target_i, pred_i], dim=2)
-                    save_image(triplet, out_dir / f"sample_{saved:04d}.png")
-                    saved += 1
-                    continue
-
-                tiles = [to_pil_image(before_i), to_pil_image(target_i), to_pil_image(pred_i)]
-                labels = ["Before", "Ground Truth", "Prediction"]
-                tile_w, tile_h = tiles[0].size
-                label_h = 18
-                canvas = Image.new("RGB", (tile_w * 3, tile_h + label_h), color=(0, 0, 0))
-                draw = ImageDraw.Draw(canvas)
-                font = ImageFont.load_default()
-
-                for idx, (tile, label) in enumerate(zip(tiles, labels)):
-                    x = idx * tile_w
-                    canvas.paste(tile, (x, label_h))
-                    if hasattr(draw, "textbbox"):
-                        bbox = draw.textbbox((0, 0), label, font=font)
-                        text_w = bbox[2] - bbox[0]
-                        text_h = bbox[3] - bbox[1]
-                    else:
-                        text_w, text_h = draw.textsize(label, font=font)
-                    text_x = x + max(2, (tile_w - text_w) // 2)
-                    text_y = max(0, (label_h - text_h) // 2)
-                    draw.text((text_x, text_y), label, fill=(255, 255, 255), font=font)
-
-                canvas.save(out_dir / f"sample_{saved:04d}.png")
+                triplet = torch.cat([img_before[i], target[i], pred[i]], dim=2).cpu()
+                save_image(triplet, out_dir / f"sample_{saved:04d}.png")
                 saved += 1
 
 

@@ -7,7 +7,11 @@ from pathlib import Path
 
 
 def _has_display() -> bool:
-    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+    return bool(
+        os.environ.get("DISPLAY")
+        or os.environ.get("WAYLAND_DISPLAY")
+        or os.name == "nt"
+    )
 
 
 def _pick_headless_backend() -> str:
