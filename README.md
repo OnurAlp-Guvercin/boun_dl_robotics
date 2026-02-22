@@ -14,12 +14,6 @@ This repository contains implementations for all HW1 deliverables:
 
 Each script supports `collect`, `train`, and `test` commands.
 
-## Setup
-
-```bash
-source robotic_env/bin/activate
-```
-
 ## Data Collection
 
 ```bash
