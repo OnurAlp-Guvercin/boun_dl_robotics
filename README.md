@@ -11,6 +11,14 @@ This repository contains implementations for all HW1 deliverables:
 - Deliverable 1: `src/hw1_mlp_position.py`
 - Deliverable 2: `src/hw1_cnn_position.py`
 - Deliverable 3: `src/hw1_reconstruction.py`
+- Homework 2 (DQN): `src/hw2_dqn.py`
+
+### Direct Source Links
+
+- [hw1_cnn_position.py](boun_dl_robotics/cmpe591.github.io/src/hw1_cnn_position.py)
+- [hw1_mlp_position.py](boun_dl_robotics/cmpe591.github.io/src/hw1_mlp_position.py)
+- [hw1_reconstruction.py](boun_dl_robotics/cmpe591.github.io/src/hw1_reconstruction.py)
+- [hw2_dqn.py](boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py)
 
 Each script supports `collect`, `train`, and `test` commands.
 
@@ -214,6 +222,13 @@ Reported training results are read from:
 - Training converges from low initial rewards (`episode 1 reward = 1.4756`) to a significantly higher stable band in later episodes.
 - The moving average in the last part of training (`last 200`) is clearly higher than the full-run average, indicating meaningful learning progress.
 - Final epsilon (`0.0209`) shows the policy mostly exploits learned behavior while keeping minimal exploration.
+
+### Report Comments
+
+- HW1: CNN-based position prediction achieved lower error than MLP, which is expected since CNN preserves spatial patterns from image input.
+- HW1: Reconstruction objective reached stable low MSE/L1 with visually coherent output samples, indicating successful action-conditioned image prediction.
+- HW2: The reward and reward-per-step curves show a clear upward training trend; late-episode averages are substantially above full-run averages, consistent with policy improvement.
+- HW2: Best reward (`30.8804`) and low final epsilon (`0.0209`) indicate that exploration was gradually reduced and the learned policy was increasingly exploited.
 
 ### Test Results
 
