@@ -1,4 +1,4 @@
-# CMPE591 - Homework 1
+# CMPE591 - Homework 1 & Homework 2
 
 This repository contains implementations for all HW1 deliverables:
 
@@ -116,3 +116,111 @@ Each sample image is formatted as:
 - `runs/hw1/mlp_pos/best.pt`
 - `runs/hw1/cnn_pos/best.pt`
 - `runs/hw1/reconstruction/best.pt`
+
+---
+
+# CMPE591 - Homework 2 (DQN)
+
+Assignment 2 implementation is provided in:
+
+- `src/hw2_dqn.py`
+
+The script includes separate `train()` and `test()` functions with CLI commands.
+By default, training uses `high_level_state` (as requested in the assignment) and supports optional pixel-state training.
+
+## HW2 Setup
+
+```bash
+source robotic_env/bin/activate
+```
+
+## HW2 Train
+
+```bash
+python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py train \
+  --state-mode high_level \
+  --run-dir runs/hw2/dqn
+```
+
+## HW2 Test
+
+```bash
+python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py test \
+  --state-mode high_level \
+  --checkpoint-path runs/hw2/dqn/best.pt \
+  --run-dir runs/hw2/dqn
+```
+
+## HW2 Outputs
+
+Training artifacts:
+
+- `runs/hw2/dqn/best.pt`
+- `runs/hw2/dqn/last.pt`
+- `runs/hw2/dqn/train_metrics.json`
+- `runs/hw2/dqn/reward_plot.png`
+- `runs/hw2/dqn/rps_plot.png`
+
+Test artifact:
+
+- `runs/hw2/dqn/test_results.json`
+
+## HW2 Report Section
+
+Reported training results are read from:
+
+- `runs/hw2/dqn/train_metrics.json`
+
+### Training Summary (High-Level State + DQN)
+
+| Metric | Value |
+| --- | ---: |
+| Episodes | 3000 |
+| Best Reward | 30.8804 |
+| Final Epsilon | 0.0209 |
+| Total Updates | 121864 |
+| Reward Mean (all episodes) | 10.6222 |
+| Reward/Step Mean (all episodes) | 0.3579 |
+| Reward Mean (last 50 episodes) | 13.9764 |
+| Reward/Step Mean (last 50 episodes) | 0.4789 |
+| Reward Mean (last 100 episodes) | 13.7801 |
+| Reward/Step Mean (last 100 episodes) | 0.4659 |
+| Reward Mean (last 200 episodes) | 14.4158 |
+| Reward/Step Mean (last 200 episodes) | 0.4866 |
+
+### Training Configuration
+
+| Hyperparameter | Value |
+| --- | ---: |
+| State Mode | `high_level` |
+| Number of Actions | 8 |
+| Max Timesteps | 30 |
+| Batch Size | 256 |
+| Gamma | 0.95 |
+| Initial Epsilon | 0.4 |
+| Epsilon Min | 0.01 |
+| Epsilon Decay | 0.999 |
+| Tau | 0.001 |
+| Learning Rate | 0.001 |
+| Weight Decay | 1e-4 |
+| Replay Buffer | 10000 |
+| Warmup Episodes | 50 |
+| Collectors | 16 |
+| Collector Queue Size | 20000 |
+| Collector Sync Updates | 200 |
+
+### Analysis
+
+- Training converges from low initial rewards (`episode 1 reward = 1.4756`) to a significantly higher stable band in later episodes.
+- The moving average in the last part of training (`last 200`) is clearly higher than the full-run average, indicating meaningful learning progress.
+- Final epsilon (`0.0209`) shows the policy mostly exploits learned behavior while keeping minimal exploration.
+
+### Test Results
+
+- `runs/hw2/dqn/test_results.json` is not generated yet in this run.
+- After running the test command, add the test summary metrics here (mean reward, reward per step, success rate).
+
+### Reward Curves
+
+![HW2 Reward](../../runs/hw2/dqn/reward_plot.png)
+![HW2 Reward per Step](../../runs/hw2/dqn/rps_plot.png)
