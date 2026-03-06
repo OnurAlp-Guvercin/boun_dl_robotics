@@ -222,5 +222,5 @@ Reported training results are read from:
 
 ### Reward Curves
 
-![HW2 Reward](../../runs/hw2/dqn/reward_plot.png)
-![HW2 Reward per Step](../../runs/hw2/dqn/rps_plot.png)
+![HW2 Reward](runs/hw2/dqn/reward_plot.png)
+![HW2 Reward per Step](runs/hw2/dqn/rps_plot.png)
