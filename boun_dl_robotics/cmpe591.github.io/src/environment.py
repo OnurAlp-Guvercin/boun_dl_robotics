@@ -2,7 +2,6 @@ import collections
 import ctypes.util
 import os
 import warnings
-from copy import deepcopy
 from pathlib import Path
 
 
@@ -400,7 +399,14 @@ def qpos_from_site_pose(model,
         err_rot_quat = np.empty(4, dtype=dtype)
 
     if not inplace:
-        data = deepcopy(data)
+        # `deepcopy(MjData)` is extremely slow; copy only the numeric state
+        # into a fresh MuJoCo data buffer for IK.
+        ik_data = mujoco.MjData(model)
+        ik_data.qpos[:] = data.qpos
+        ik_data.qvel[:] = data.qvel
+        if model.na > 0:
+            ik_data.act[:] = data.act
+        data = ik_data
 
     mujoco.mj_fwdPosition(model, data)
     site_id = model.site(site_name).id
@@ -412,7 +418,7 @@ def qpos_from_site_pose(model,
     elif isinstance(joint_names, (list, np.ndarray, tuple)):
         if isinstance(joint_names, tuple):
             joint_names = list(joint_names)
-        dof_indices = [model.joint(name).id for name in joint_names]
+        dof_indices = [model.joint(name).dofadr[0] for name in joint_names]
     else:
         raise ValueError(f"`joint_names` must be either None, a list, a tuple, or a numpy array; "
                          f"got {type(joint_names)}.")

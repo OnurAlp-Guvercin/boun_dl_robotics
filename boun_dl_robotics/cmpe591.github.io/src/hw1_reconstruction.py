@@ -4,7 +4,8 @@ import math
 from dataclasses import dataclass
 from multiprocessing import Process
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TypeAlias, cast
+from collections.abc import Sized
 
 import numpy as np
 import torch
@@ -12,19 +13,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, random_split
 from torchvision.utils import save_image
-
+from tqdm import tqdm
+import matplotlib.pyplot as plt
 from homework1 import Hw1Env
 
-try:
-    from tqdm import tqdm
-except ImportError:
-    def tqdm(iterable, **kwargs):
-        return iterable
-
-try:
-    import matplotlib.pyplot as plt
-except ImportError:
-    plt = None
+Sample: TypeAlias = Dict[str, torch.Tensor]
 
 
 N_ACTIONS = 4
@@ -213,8 +206,8 @@ def collect_dataset(
     return merged_path
 
 
-class Hw1Dataset(Dataset):
-    def __init__(self, data: Dict[str, torch.Tensor]) -> None:
+class Hw1Dataset(Dataset[Sample]):
+    def __init__(self, data: Sample) -> None:
         self.imgs_before = data["imgs_before"].float() / 255.0
         self.actions = data["actions"].long()
         self.pos_after = data["pos_after"].float()
@@ -223,7 +216,7 @@ class Hw1Dataset(Dataset):
     def __len__(self) -> int:
         return self.actions.shape[0]
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Sample:
         action_id = self.actions[idx]
         action_onehot = F.one_hot(action_id, num_classes=N_ACTIONS).float()
         return {
@@ -237,22 +230,23 @@ class Hw1Dataset(Dataset):
 
 @dataclass
 class SplitLoaders:
-    train: DataLoader
-    val: DataLoader
-    test: DataLoader
+    train: DataLoader[Sample]
+    val: DataLoader[Sample]
+    test: DataLoader[Sample]
 
 
 def build_loaders(
-    dataset: Dataset,
+    dataset: Dataset[Sample],
     batch_size: int,
     seed: int,
     val_ratio: float = DEFAULT_VAL_RATIO,
     test_ratio: float = DEFAULT_TEST_RATIO,
 ) -> SplitLoaders:
-    if len(dataset) < 10:
+    dataset_sized = cast(Sized, dataset)
+    if len(dataset_sized) < 10:
         raise ValueError("Dataset is too small. Collect at least 10 samples.")
 
-    n_total = len(dataset)
+    n_total = len(dataset_sized)
     n_val = max(1, int(n_total * val_ratio))
     n_test = max(1, int(n_total * test_ratio))
     n_train = n_total - n_val - n_test
@@ -342,12 +336,12 @@ class ActionConditionedReconstructor(nn.Module):
         )
 
     def forward(self, img_before: torch.Tensor, action_onehot: torch.Tensor) -> torch.Tensor:
-        x = self.encoder(img_before)
-        x = x.flatten(start_dim=1)
-        z = self.to_latent(x)
-        z = torch.cat([z, action_onehot], dim=1)
-        y = self.from_latent(z).view(-1, 256, 8, 8)
-        return self.decoder(y)
+        x = self.encoder(img_before)                     # [B, 3, 128, 128] -> [B, 256, 4, 4]
+        x = x.flatten(start_dim=1)                       # [B, 256, 4, 4] -> [B, 4096]
+        z = self.to_latent(x)                            # [B, 4096] -> [B, latent_dim]
+        z = torch.cat([z, action_onehot], dim=1)        # [B, latent_dim] + [B, 4] -> [B, latent_dim + 4]
+        y = self.from_latent(z).view(-1, 256, 8, 8)     # [B, latent_dim + 4] -> [B, 16384] -> [B, 256, 8, 8]
+        return self.decoder(y)                           # [B, 256, 8, 8] -> [B, 3, 128, 128]
 
 
 def evaluate(model: nn.Module, loader, device: torch.device, desc: str = "eval") -> Dict[str, float]:

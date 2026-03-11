@@ -4,26 +4,19 @@ import math
 from dataclasses import dataclass
 from multiprocessing import Process
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TypeAlias, cast
+from collections.abc import Sized
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset, random_split
-
+from tqdm import tqdm
 from homework1 import Hw1Env
+import matplotlib.pyplot as plt
 
-try:
-    from tqdm import tqdm
-except ImportError:
-    def tqdm(iterable, **kwargs):
-        return iterable
-
-try:
-    import matplotlib.pyplot as plt
-except ImportError:
-    plt = None
+Sample: TypeAlias = Dict[str, torch.Tensor]
 
 
 N_ACTIONS = 4
@@ -74,6 +67,7 @@ def set_seeds(seed: int) -> None:
 
 
 def _collect_worker(worker_id: int, n_samples: int, out_dir: str, seed: int) -> None:
+    """Worker function to collect a shard of the dataset."""
     set_seeds(seed + worker_id)
     out_path = Path(out_dir)
     out_path.mkdir(parents=True, exist_ok=True)
@@ -212,8 +206,8 @@ def collect_dataset(
     return merged_path
 
 
-class Hw1Dataset(Dataset):
-    def __init__(self, data: Dict[str, torch.Tensor]) -> None:
+class Hw1Dataset(Dataset[Sample]):
+    def __init__(self, data: Sample) -> None:
         self.imgs_before = data["imgs_before"].float() / 255.0
         self.actions = data["actions"].long()
         self.pos_after = data["pos_after"].float()
@@ -221,7 +215,7 @@ class Hw1Dataset(Dataset):
     def __len__(self) -> int:
         return self.actions.shape[0]
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Sample:
         action_id = self.actions[idx]
         action_onehot = F.one_hot(action_id, num_classes=N_ACTIONS).float()
         return {
@@ -234,22 +228,23 @@ class Hw1Dataset(Dataset):
 
 @dataclass
 class SplitLoaders:
-    train: DataLoader
-    val: DataLoader
-    test: DataLoader
+    train: DataLoader[Sample]
+    val: DataLoader[Sample]
+    test: DataLoader[Sample]
 
 
 def build_loaders(
-    dataset: Dataset,
+    dataset: Dataset[Sample],
     batch_size: int,
     seed: int,
     val_ratio: float = DEFAULT_VAL_RATIO,
     test_ratio: float = DEFAULT_TEST_RATIO,
 ) -> SplitLoaders:
-    if len(dataset) < 10:
+    dataset_sized = cast(Sized, dataset)
+    if len(dataset_sized) < 10:
         raise ValueError("Dataset is too small. Collect at least 10 samples.")
 
-    n_total = len(dataset)
+    n_total = len(dataset_sized)
     n_val = max(1, int(n_total * val_ratio))
     n_test = max(1, int(n_total * test_ratio))
     n_train = n_total - n_val - n_test
@@ -413,6 +408,7 @@ def train(
     seed: int = DEFAULT_SEED,
     device: str = DEFAULT_DEVICE,
 ) -> Dict[str, float]:
+    
     set_seeds(seed)
     out_dir = Path(run_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

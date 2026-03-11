@@ -6,7 +6,7 @@ import queue
 import random
 from collections import deque
 from pathlib import Path
-from typing import Deque, Dict, List, Optional, Tuple
+from typing import Deque, Dict, List, Optional, Tuple, TypedDict
 
 import numpy as np
 import torch
@@ -15,16 +15,8 @@ import torch.nn.functional as F
 
 from homework2 import Hw2Env
 
-try:
-    from tqdm import tqdm
-except ImportError:
-    def tqdm(iterable, **kwargs):
-        return iterable
-
-try:
-    import matplotlib.pyplot as plt
-except ImportError:
-    plt = None
+from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 STATE_HIGH_LEVEL = "high_level"
 STATE_PIXELS = "pixels"
@@ -36,23 +28,23 @@ DEFAULT_COMMAND = CMD_TRAIN
 
 DEFAULT_RUN_DIR = "runs/hw2/dqn"
 DEFAULT_DEVICE = "auto"
-DEFAULT_RENDER_MODE = "offscreen"
+DEFAULT_RENDER_MODE = "offscreen" # offscreen or gui
 DEFAULT_STATE_MODE = STATE_HIGH_LEVEL
 
-# Stable hyperparameters provided in HW2 page.
+# State-based default hyperparameters (course update).
 DEFAULT_N_ACTIONS = 8
-DEFAULT_MAX_TIMESTEPS = 30
-DEFAULT_N_EPISODES = 3_000
-DEFAULT_BATCH_SIZE = 256
-DEFAULT_GAMMA = 0.95
-DEFAULT_EPSILON = 0.4
-DEFAULT_EPSILON_MIN = 0.01
-DEFAULT_EPSILON_DECAY = 0.999
-DEFAULT_TAU = 0.001
-DEFAULT_LR = 0.001
+DEFAULT_MAX_TIMESTEPS = 50
+DEFAULT_N_EPISODES = 2_500
+DEFAULT_BATCH_SIZE = 128
+DEFAULT_GAMMA = 0.99
+DEFAULT_EPSILON = 0.9
+DEFAULT_EPSILON_MIN = 0.05
+DEFAULT_EPSILON_DECAY = 10_000
+DEFAULT_TAU = 0.005
+DEFAULT_LR = 1e-4
 DEFAULT_WEIGHT_DECAY = 1e-4
 DEFAULT_REPLAY_BUFFER_SIZE = 10_000
-DEFAULT_WARMUP_EPISODES = 50
+DEFAULT_WARMUP_EPISODES = 0
 DEFAULT_LEARN_UPDATES = 1
 
 DEFAULT_SEED = 42
@@ -60,11 +52,21 @@ DEFAULT_GRAD_CLIP = 5.0
 DEFAULT_LOG_EVERY = 25
 DEFAULT_EVAL_EPISODES = 100
 DEFAULT_EVAL_EPSILON = 0.0
-DEFAULT_NUM_COLLECTORS = max(1, min(16, (os.cpu_count() or 4) // 2))
+DEFAULT_NUM_COLLECTORS = 1
 DEFAULT_COLLECTOR_QUEUE_SIZE = 20_000
 DEFAULT_COLLECTOR_SYNC_UPDATES = 200
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+class EpisodeMetric(TypedDict):
+    episode: int
+    total_reward: float
+    reward_per_step: float
+    steps: float
+    epsilon: float
+    mean_loss: float | None
+    replay_size: float
 
 
 def resolve_device(device_arg: str) -> torch.device:
@@ -118,9 +120,9 @@ def moving_average(values: List[float], window: int) -> List[float]:
     return result
 
 
-def save_training_plots(history: List[Dict[str, float]], out_dir: Path) -> None:
+def save_training_plots(history: List[EpisodeMetric], out_dir: Path) -> None:
     """Saves reward and reward-per-step plots from training history."""
-    if plt is None or not history:
+    if not history:
         return
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -282,6 +284,14 @@ def soft_update(target: nn.Module, source: nn.Module, tau: float) -> None:
             tgt_param.mul_(1.0 - tau).add_(src_param, alpha=tau)
 
 
+def epsilon_by_step(step: int, eps_start: float, eps_end: float, eps_decay: float) -> float:
+    """Calculate epsilon value for epsilon-greedy action selection based on the current step."""
+    if eps_decay <= 0:
+        return float(eps_end)
+    value = eps_end + (eps_start - eps_end) * np.exp(-float(step) / float(eps_decay))
+    return float(max(eps_end, value))
+
+
 def epsilon_greedy_action(
     model: nn.Module,
     obs: np.ndarray,
@@ -392,7 +402,7 @@ def _collector_worker(
 
     while not stop_event.is_set():
         env.reset()
-        obs = get_observation(env, state_mode=state_mode)
+        obs = get_observation(env, state_mode=state_mode) # [ee_x, ee_y, obj_x, obj_y, goal_x, goal_y]
         done = False
         total_reward = 0.0
         steps = 0
@@ -453,7 +463,8 @@ def train(
     num_collectors: int = DEFAULT_NUM_COLLECTORS,
     collector_queue_size: int = DEFAULT_COLLECTOR_QUEUE_SIZE,
     collector_sync_updates: int = DEFAULT_COLLECTOR_SYNC_UPDATES,
-) -> Dict[str, float]:
+) -> Dict[str, object]:
+    
     if state_mode not in STATE_CHOICES:
         raise ValueError(f"state_mode must be one of {STATE_CHOICES}")
     if n_actions <= 1:
@@ -470,9 +481,10 @@ def train(
     optimizer = torch.optim.AdamW(online_model.parameters(), lr=lr, weight_decay=weight_decay)
     replay_buffer = ReplayBuffer(capacity=n_replay_buffer, state_mode=state_mode)
 
-    episode_history: List[Dict[str, float]] = []
+    episode_history: List[EpisodeMetric] = []
     best_reward = float("-inf")
     epsilon_value = float(epsilon)
+    global_steps = 0
     total_updates = 0
     if num_collectors <= 1:
         env = Hw2Env(n_actions=n_actions, render_mode=render_mode)
@@ -480,7 +492,7 @@ def train(
 
         for episode in tqdm(range(1, n_episodes + 1), desc="episodes", leave=True):
             env.reset()
-            obs = get_observation(env, state_mode=state_mode)
+            obs = get_observation(env, state_mode=state_mode) #[ee_x, ee_y, obj_x, obj_y, goal_x, goal_y]
             done = False
             total_reward = 0.0
             episode_steps = 0
@@ -490,6 +502,12 @@ def train(
                 if episode <= n_warmup_episodes:
                     action = int(np.random.randint(n_actions))
                 else:
+                    epsilon_value = epsilon_by_step(
+                        step=global_steps,
+                        eps_start=epsilon,
+                        eps_end=epsilon_min,
+                        eps_decay=epsilon_decay,
+                    )
                     action = epsilon_greedy_action(
                         model=online_model,
                         obs=obs,
@@ -503,11 +521,12 @@ def train(
                 next_obs = get_observation(env, state_mode=state_mode, step_state=step_state)
                 done = bool(is_terminal or is_truncated)
 
-                replay_buffer.append(obs, action, reward, next_obs, done)
+                replay_buffer.append(obs, int(action), float(reward), next_obs, bool(done))
                 obs = next_obs
 
                 total_reward += float(reward)
                 episode_steps += 1
+                global_steps += 1
 
                 if episode > n_warmup_episodes and len(replay_buffer) >= batch_size:
                     for _ in range(max(1, n_learn_updates)):
@@ -526,11 +545,8 @@ def train(
                             losses.append(loss)
                             total_updates += 1
 
-            if episode > n_warmup_episodes:
-                epsilon_value = max(epsilon_min, epsilon_value * epsilon_decay)
-
             reward_per_step = total_reward / max(1, episode_steps)
-            mean_loss = float(np.mean(losses)) if losses else None
+            mean_loss: float | None = float(np.mean(losses)) if len(losses) > 0 else None
             episode_history.append(
                 {
                     "episode": episode,
@@ -615,12 +631,19 @@ def train(
                         episodes_done += 1
                         pbar.update(1)
                         if episodes_done > n_warmup_episodes:
-                            epsilon_value = max(epsilon_min, epsilon_value * epsilon_decay)
+                            epsilon_value = epsilon_by_step(
+                                step=transitions_seen,
+                                eps_start=epsilon,
+                                eps_end=epsilon_min,
+                                eps_decay=epsilon_decay,
+                            )
                             for cmd_q in cmd_queues:
                                 _queue_replace_latest(cmd_q, ("set_epsilon", epsilon_value))
 
                         reward_per_step = float(total_reward) / max(1, int(episode_steps))
-                        mean_loss = float(np.mean(recent_losses)) if recent_losses else None
+                        mean_loss: float | None = (
+                            float(np.mean(recent_losses)) if len(recent_losses) > 0 else None
+                        )
                         episode_history.append(
                             {
                                 "episode": episodes_done,

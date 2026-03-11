@@ -139,7 +139,7 @@ By default, training uses `high_level_state` (as requested in the assignment) an
 ## HW2 Setup
 
 ```bash
-source robotic_env/bin/activate
+source robotics_env/bin/activate
 ```
 
 ## HW2 Train
@@ -175,11 +175,35 @@ Test artifact:
 
 ## HW2 Report Section
 
-Reported training results are read from:
+### Instructor Update (Implemented as Defaults)
 
+The default state-based hyperparameters in `src/hw2_dqn.py` are now:
+
+| Hyperparameter | Value |
+| --- | ---: |
+| memory_size (`n_replay_buffer`) | 10000 |
+| num_episodes (`n_episodes`) | 2500 |
+| batch_size | 128 |
+| eps_decay | 10000 |
+| eps_end (`epsilon_min`) | 0.05 |
+| eps_start (`epsilon`) | 0.9 |
+| gamma | 0.99 |
+| learning_rate (`lr`) | 0.0001 |
+| tau (soft target update) | 0.005 |
+
+### Recommended Train Command (Updated Defaults)
+
+```bash
+python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py train \
+  --state-mode high_level \
+  --render-mode offscreen \
+  --run-dir runs/hw2/dqn
+```
+
+### Baseline Result (Before This Update)
+
+This baseline is from the previous run file:
 - `runs/hw2/dqn/train_metrics.json`
-
-### Training Summary (High-Level State + DQN)
 
 | Metric | Value |
 | --- | ---: |
@@ -196,44 +220,22 @@ Reported training results are read from:
 | Reward Mean (last 200 episodes) | 14.4158 |
 | Reward/Step Mean (last 200 episodes) | 0.4866 |
 
-### Training Configuration
+### Multi-Run Comparison Table (Required by Instructor)
 
-| Hyperparameter | Value |
-| --- | ---: |
-| State Mode | `high_level` |
-| Number of Actions | 8 |
-| Max Timesteps | 30 |
-| Batch Size | 256 |
-| Gamma | 0.95 |
-| Initial Epsilon | 0.4 |
-| Epsilon Min | 0.01 |
-| Epsilon Decay | 0.999 |
-| Tau | 0.001 |
-| Learning Rate | 0.001 |
-| Weight Decay | 1e-4 |
-| Replay Buffer | 10000 |
-| Warmup Episodes | 50 |
-| Collectors | 16 |
-| Collector Queue Size | 20000 |
-| Collector Sync Updates | 200 |
+Run each experiment with a different `--run-dir` (for example `runs/hw2/dqn_run1`, `runs/hw2/dqn_run2`, ...), then fill this table:
 
-### Analysis
-
-- Training converges from low initial rewards (`episode 1 reward = 1.4756`) to a significantly higher stable band in later episodes.
-- The moving average in the last part of training (`last 200`) is clearly higher than the full-run average, indicating meaningful learning progress.
-- Final epsilon (`0.0209`) shows the policy mostly exploits learned behavior while keeping minimal exploration.
-
-### Report Comments
-
-- HW1: CNN-based position prediction achieved lower error than MLP, which is expected since CNN preserves spatial patterns from image input.
-- HW1: Reconstruction objective reached stable low MSE/L1 with visually coherent output samples, indicating successful action-conditioned image prediction.
-- HW2: The reward and reward-per-step curves show a clear upward training trend; late-episode averages are substantially above full-run averages, consistent with policy improvement.
-- HW2: Best reward (`30.8804`) and low final epsilon (`0.0209`) indicate that exploration was gradually reduced and the learned policy was increasingly exploited.
+| Run | 1) What changed in hyperparameters? | 2) Effect on performance | 3) Brief discussion (why?) |
+| --- | --- | --- | --- |
+| Run-1 | Updated default set above | Fill from `train_metrics.json` and `test_results.json` |  |
+| Run-2 |  |  |  |
+| Run-3 |  |  |  |
 
 ### Test Results
 
-- `runs/hw2/dqn/test_results.json` is not generated yet in this run.
-- After running the test command, add the test summary metrics here (mean reward, reward per step, success rate).
+- Add per-run test summaries from each run directory:
+- mean reward
+- reward per step
+- success rate
 
 ### Reward Curves
 
