@@ -218,6 +218,7 @@ class ReplayBuffer:
         batch_size: int,
         device: torch.device,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        
         indices = np.random.choice(len(self.buffer), size=batch_size, replace=False)
         batch = [self.buffer[int(i)] for i in indices]
         states, actions, rewards, next_states, dones = zip(*batch)
