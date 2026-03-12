@@ -139,15 +139,29 @@ By default, training uses `high_level_state` (as requested in the assignment) an
 ## HW2 Setup
 
 ```bash
-source robotics_env/bin/activate
+source robotic_env/bin/activate
 ```
+
+Python compatibility:
+- Python 3.9 and 3.11 are supported by the homework scripts.
 
 ## HW2 Train
 
 ```bash
 python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py train \
+  --state-mode high_level
+```
+
+Example run directories used in this report:
+
+```bash
+python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py train \
   --state-mode high_level \
-  --run-dir runs/hw2/dqn
+  --run-dir runs/hw2/dqn_1
+
+python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py train \
+  --state-mode high_level \
+  --run-dir runs/hw2/dqn_2
 ```
 
 ## HW2 Test
@@ -155,29 +169,37 @@ python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py train \
 ```bash
 python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py test \
   --state-mode high_level \
-  --checkpoint-path runs/hw2/dqn/best.pt \
-  --run-dir runs/hw2/dqn
+  --checkpoint-path runs/hw2/dqn_2/best.pt \
+  --run-dir runs/hw2/dqn_2
 ```
 
 ## HW2 Outputs
 
 Training artifacts:
 
-- `runs/hw2/dqn/best.pt`
-- `runs/hw2/dqn/last.pt`
-- `runs/hw2/dqn/train_metrics.json`
-- `runs/hw2/dqn/reward_plot.png`
-- `runs/hw2/dqn/rps_plot.png`
+- `<run_dir>/best.pt`
+- `<run_dir>/last.pt`
+- `<run_dir>/train_metrics.json`
+- `<run_dir>/reward_plot.png`
+- `<run_dir>/rps_plot.png`
 
 Test artifact:
 
-- `runs/hw2/dqn/test_results.json`
+- `<run_dir>/test_results.json`
 
 ## HW2 Report Section
 
-### Instructor Update (Implemented as Defaults)
+### What Instructor Asks (Per Run)
 
-The default state-based hyperparameters in `src/hw2_dqn.py` are now:
+For each run, include these 3 items in `README.md`:
+
+1. What hyperparameters you changed
+2. How performance changed (reward / reward-per-step / success rate)
+3. Short discussion of why this change produced that effect
+
+### Instructor Reference Hyperparameters (From Email)
+
+The instructor shared the following state-based set as a reference:
 
 | Hyperparameter | Value |
 | --- | ---: |
@@ -191,19 +213,53 @@ The default state-based hyperparameters in `src/hw2_dqn.py` are now:
 | learning_rate (`lr`) | 0.0001 |
 | tau (soft target update) | 0.005 |
 
-### Recommended Train Command (Updated Defaults)
+### Current Code Defaults (`src/hw2_dqn.py`)
+
+The current defaults in code (used for the latest trial setup) are:
+
+| Hyperparameter | Value |
+| --- | ---: |
+| memory_size (`n_replay_buffer`) | 20000 |
+| num_episodes (`n_episodes`) | 2500 |
+| batch_size | 128 |
+| eps_decay | 20000 |
+| eps_end (`epsilon_min`) | 0.10 |
+| eps_start (`epsilon`) | 1.0 |
+| gamma | 0.995 |
+| learning_rate (`lr`) | 0.00005 |
+| tau (soft target update) | 0.01 |
+| warmup_episodes (`n_warmup_episodes`) | 100 |
+| num_collectors | 16 |
+| collector_sync_updates | 25 |
+
+### Recommended Train Command (Current Defaults)
 
 ```bash
 python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py train \
   --state-mode high_level \
-  --render-mode offscreen \
-  --run-dir runs/hw2/dqn
+  --render-mode offscreen
+```
+
+### Reproducing Instructor Set (Optional)
+
+```bash
+python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py train \
+  --state-mode high_level \
+  --n-episodes 2500 \
+  --batch-size 128 \
+  --epsilon 0.9 \
+  --epsilon-min 0.05 \
+  --epsilon-decay 10000 \
+  --gamma 0.99 \
+  --lr 1e-4 \
+  --tau 0.005 \
+  --n-replay-buffer 10000
 ```
 
 ### Baseline Result (Before This Update)
 
 This baseline is from the previous run file:
-- `runs/hw2/dqn/train_metrics.json`
+- `runs/hw2/dqn_1/train_metrics.json`
 
 | Metric | Value |
 | --- | ---: |
@@ -220,24 +276,44 @@ This baseline is from the previous run file:
 | Reward Mean (last 200 episodes) | 14.4158 |
 | Reward/Step Mean (last 200 episodes) | 0.4866 |
 
-### Multi-Run Comparison Table (Required by Instructor)
+### Multi-Run Comparison (HW2)
 
-Run each experiment with a different `--run-dir` (for example `runs/hw2/dqn_run1`, `runs/hw2/dqn_run2`, ...), then fill this table:
+I trained each run in a separate folder and evaluated with 100 test episodes for a fair comparison.
 
-| Run | 1) What changed in hyperparameters? | 2) Effect on performance | 3) Brief discussion (why?) |
+| Run | What I changed | What happened | My take |
 | --- | --- | --- | --- |
-| Run-1 | Updated default set above | Fill from `train_metrics.json` and `test_results.json` |  |
-| Run-2 |  |  |  |
-| Run-3 |  |  |  |
+| Run-1 | More aggressive setup: `n_episodes=3000`, `batch_size=256`, `gamma=0.95`, `lr=1e-3`, `tau=0.001`, fast exploration decay (`epsilon=0.4` to `0.01`), and `n_warmup_episodes=50`. | Test (`runs/hw2/dqn_1/test_results.json`): mean reward `23.84`, mean RPS `0.4940`, success rate `5%`. | It learns dense reward quickly, but this does not consistently turn into goal-reaching behavior. |
+| Run-2 | Mostly instructor-style setup: `n_episodes=2500`, `batch_size=128`, `gamma=0.99`, `lr=1e-4`, `tau=0.005`, `epsilon=0.9` to `0.05` (`decay=10000`), with a larger replay size `50000`. | Test (`runs/hw2/dqn_2/test_results.json`): mean reward `23.98`, mean RPS `0.4869`, success rate `2%`, lower reward variance (`std 12.15 -> 8.62`). | Compared to Run-1, behavior is more stable but also more conservative; it keeps reward variance lower, yet converts less often to terminal success. |
+| Run-3 | More exploration-heavy/stable setup: `n_episodes=2500`, `batch_size=128`, `gamma=0.995`, `lr=5e-5`, `tau=0.01`, `epsilon=1.0` to `0.1` (`decay=20000`), `n_replay_buffer=20000`, `n_warmup_episodes=100`, `collector_sync_updates=25`. | Test (`runs/hw2/dqn_3/test_results.json`): mean reward `7.51`, mean RPS `0.1503`, success rate `0%`, mean steps `50.0`. | This setting stayed too exploratory and conservative for this task. The policy did not converge to goal-reaching behavior, and episodes almost always timed out. |
 
 ### Test Results
 
-- Add per-run test summaries from each run directory:
-- mean reward
-- reward per step
-- success rate
+Source file (latest run): `runs/hw2/dqn_3/test_results.json`
+
+| Metric | Value |
+| --- | ---: |
+| Evaluation Episodes | 100 |
+| Epsilon (test) | 0.0 |
+| Mean Total Reward | 7.5141 |
+| Std Total Reward | 4.8327 |
+| Mean Reward per Step | 0.1503 |
+| Std Reward per Step | 0.0967 |
+| Mean Steps | 50.0 |
+| Success Rate | 0.0000 (0.0%) |
 
 ### Reward Curves
 
-![HW2 Reward](runs/hw2/dqn/reward_plot.png)
-![HW2 Reward per Step](runs/hw2/dqn/rps_plot.png)
+Run-1 (`runs/hw2/dqn_1`)
+
+![HW2 Reward Run-1](runs/hw2/dqn_1/reward_plot.png)
+![HW2 Reward per Step Run-1](runs/hw2/dqn_1/rps_plot.png)
+
+Run-2 (`runs/hw2/dqn_2`)
+
+![HW2 Reward Run-2](runs/hw2/dqn_2/reward_plot.png)
+![HW2 Reward per Step Run-2](runs/hw2/dqn_2/rps_plot.png)
+
+Run-3 (`runs/hw2/dqn_3`)
+
+![HW2 Reward Run-3](runs/hw2/dqn_3/reward_plot.png)
+![HW2 Reward per Step Run-3](runs/hw2/dqn_3/rps_plot.png)

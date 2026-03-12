@@ -1,0 +1,724 @@
+{
+  "summary": {
+    "mean_total_reward": 23.841733275512834,
+    "std_total_reward": 12.153216864402804,
+    "mean_reward_per_step": 0.49399547438566616,
+    "std_reward_per_step": 0.24123685493346678,
+    "mean_steps": 48.6,
+    "success_rate": 0.05,
+    "episodes": 100,
+    "epsilon": 0.0
+  },
+  "history": [
+    {
+      "episode": 1.0,
+      "total_reward": 30.58069633704881,
+      "reward_per_step": 0.6116139267409761,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 2.0,
+      "total_reward": 6.009744226682406,
+      "reward_per_step": 0.12019488453364811,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 3.0,
+      "total_reward": 2.5151806684521474,
+      "reward_per_step": 0.050303613369042946,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 4.0,
+      "total_reward": 37.84208089067258,
+      "reward_per_step": 0.7568416178134515,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 5.0,
+      "total_reward": 9.930840372188506,
+      "reward_per_step": 0.4514018350994775,
+      "steps": 22.0,
+      "success": 1.0
+    },
+    {
+      "episode": 6.0,
+      "total_reward": 37.87176263669102,
+      "reward_per_step": 0.7574352527338203,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 7.0,
+      "total_reward": 29.586813661305346,
+      "reward_per_step": 0.5917362732261069,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 8.0,
+      "total_reward": 29.79179033433634,
+      "reward_per_step": 0.5958358066867269,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 9.0,
+      "total_reward": 28.090916164648405,
+      "reward_per_step": 0.5618183232929681,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 10.0,
+      "total_reward": 43.38904684137869,
+      "reward_per_step": 0.8677809368275738,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 11.0,
+      "total_reward": 34.60381077119663,
+      "reward_per_step": 0.6920762154239326,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 12.0,
+      "total_reward": 22.731612647178725,
+      "reward_per_step": 0.4546322529435745,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 13.0,
+      "total_reward": 6.435566926018904,
+      "reward_per_step": 0.12871133852037808,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 14.0,
+      "total_reward": 21.88420544343983,
+      "reward_per_step": 0.7294735147813276,
+      "steps": 30.0,
+      "success": 1.0
+    },
+    {
+      "episode": 15.0,
+      "total_reward": 25.789060915608044,
+      "reward_per_step": 0.5157812183121608,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 16.0,
+      "total_reward": 31.638652324462406,
+      "reward_per_step": 0.6327730464892481,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 17.0,
+      "total_reward": 7.1960670679054175,
+      "reward_per_step": 0.14392134135810836,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 18.0,
+      "total_reward": 34.41802809404617,
+      "reward_per_step": 0.6883605618809234,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 19.0,
+      "total_reward": 3.2276216981912254,
+      "reward_per_step": 0.06455243396382451,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 20.0,
+      "total_reward": 24.42276569344315,
+      "reward_per_step": 0.488455313868863,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 21.0,
+      "total_reward": 28.414709461150903,
+      "reward_per_step": 0.568294189223018,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 22.0,
+      "total_reward": 43.45992543877943,
+      "reward_per_step": 0.8691985087755886,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 23.0,
+      "total_reward": 12.502928774568147,
+      "reward_per_step": 0.25005857549136296,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 24.0,
+      "total_reward": 32.5914085194793,
+      "reward_per_step": 0.6518281703895861,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 25.0,
+      "total_reward": 33.63652779796301,
+      "reward_per_step": 0.6727305559592602,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 26.0,
+      "total_reward": 31.97645710566469,
+      "reward_per_step": 0.6395291421132938,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 27.0,
+      "total_reward": 34.73369308268692,
+      "reward_per_step": 0.6946738616537383,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 28.0,
+      "total_reward": 7.413115933499063,
+      "reward_per_step": 0.14826231866998127,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 29.0,
+      "total_reward": 31.557571577115812,
+      "reward_per_step": 0.6311514315423162,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 30.0,
+      "total_reward": 10.595218317560324,
+      "reward_per_step": 0.21190436635120646,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 31.0,
+      "total_reward": 30.414321418432035,
+      "reward_per_step": 0.6082864283686407,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 32.0,
+      "total_reward": 3.2096913934906364,
+      "reward_per_step": 0.06419382786981273,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 33.0,
+      "total_reward": 26.697056313708394,
+      "reward_per_step": 0.5339411262741679,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 34.0,
+      "total_reward": 9.814285171417154,
+      "reward_per_step": 0.8178570976180962,
+      "steps": 12.0,
+      "success": 1.0
+    },
+    {
+      "episode": 35.0,
+      "total_reward": 6.0711878774020995,
+      "reward_per_step": 0.121423757548042,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 36.0,
+      "total_reward": 2.5990781911914214,
+      "reward_per_step": 0.05198156382382843,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 37.0,
+      "total_reward": 30.018591570507958,
+      "reward_per_step": 0.6003718314101592,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 38.0,
+      "total_reward": 30.38905133811756,
+      "reward_per_step": 0.6077810267623512,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 39.0,
+      "total_reward": 35.314279667011746,
+      "reward_per_step": 0.7062855933402349,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 40.0,
+      "total_reward": 35.06165294047127,
+      "reward_per_step": 0.7012330588094254,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 41.0,
+      "total_reward": 32.25186572892324,
+      "reward_per_step": 0.6450373145784648,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 42.0,
+      "total_reward": 2.1153670683486605,
+      "reward_per_step": 0.04230734136697321,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 43.0,
+      "total_reward": 29.73112434272629,
+      "reward_per_step": 0.5946224868545258,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 44.0,
+      "total_reward": 34.46138805207427,
+      "reward_per_step": 0.6892277610414854,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 45.0,
+      "total_reward": 28.068776843155746,
+      "reward_per_step": 0.5613755368631149,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 46.0,
+      "total_reward": 32.266776422277864,
+      "reward_per_step": 0.6453355284455573,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 47.0,
+      "total_reward": 31.927025369732217,
+      "reward_per_step": 0.6385405073946443,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 48.0,
+      "total_reward": 10.818457194069348,
+      "reward_per_step": 0.21636914388138695,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 49.0,
+      "total_reward": 4.599763345044443,
+      "reward_per_step": 0.09199526690088886,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 50.0,
+      "total_reward": 28.846231700788547,
+      "reward_per_step": 0.576924634015771,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 51.0,
+      "total_reward": 24.55264926164891,
+      "reward_per_step": 0.4910529852329782,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 52.0,
+      "total_reward": 25.589628878997097,
+      "reward_per_step": 0.5117925775799419,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 53.0,
+      "total_reward": 32.93219206110647,
+      "reward_per_step": 0.6586438412221294,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 54.0,
+      "total_reward": 28.82442619845529,
+      "reward_per_step": 0.5764885239691058,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 55.0,
+      "total_reward": 31.668156717111806,
+      "reward_per_step": 0.6333631343422361,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 56.0,
+      "total_reward": 18.072629703645926,
+      "reward_per_step": 0.3614525940729185,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 57.0,
+      "total_reward": 9.511989587714053,
+      "reward_per_step": 0.19023979175428107,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 58.0,
+      "total_reward": 33.58073448549545,
+      "reward_per_step": 0.671614689709909,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 59.0,
+      "total_reward": 29.36527180405863,
+      "reward_per_step": 0.5873054360811726,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 60.0,
+      "total_reward": 5.371098036215371,
+      "reward_per_step": 0.10742196072430742,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 61.0,
+      "total_reward": 10.558388870976191,
+      "reward_per_step": 0.21116777741952383,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 62.0,
+      "total_reward": 2.6008320025332403,
+      "reward_per_step": 0.05201664005066481,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 63.0,
+      "total_reward": 28.786337028915966,
+      "reward_per_step": 0.5757267405783193,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 64.0,
+      "total_reward": 30.538168052069167,
+      "reward_per_step": 0.6107633610413834,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 65.0,
+      "total_reward": 3.2695556601606546,
+      "reward_per_step": 0.06539111320321309,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 66.0,
+      "total_reward": 26.707576272149645,
+      "reward_per_step": 0.5341515254429929,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 67.0,
+      "total_reward": 26.68606400180483,
+      "reward_per_step": 0.5337212800360966,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 68.0,
+      "total_reward": 3.0179602361749645,
+      "reward_per_step": 0.06035920472349929,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 69.0,
+      "total_reward": 35.65629083267062,
+      "reward_per_step": 0.7131258166534125,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 70.0,
+      "total_reward": 6.410233185651487,
+      "reward_per_step": 0.12820466371302974,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 71.0,
+      "total_reward": 22.10091786652876,
+      "reward_per_step": 0.4420183573305752,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 72.0,
+      "total_reward": 30.431606014429235,
+      "reward_per_step": 0.6086321202885847,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 73.0,
+      "total_reward": 44.46213590787826,
+      "reward_per_step": 0.8892427181575653,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 74.0,
+      "total_reward": 25.47699158002331,
+      "reward_per_step": 0.5095398316004662,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 75.0,
+      "total_reward": 30.034592120316056,
+      "reward_per_step": 0.6006918424063211,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 76.0,
+      "total_reward": 4.136288830482683,
+      "reward_per_step": 0.08272577660965366,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 77.0,
+      "total_reward": 23.635723305986915,
+      "reward_per_step": 0.4727144661197383,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 78.0,
+      "total_reward": 12.813718957688474,
+      "reward_per_step": 0.2562743791537695,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 79.0,
+      "total_reward": 7.295193046638614,
+      "reward_per_step": 0.4052885025910341,
+      "steps": 18.0,
+      "success": 1.0
+    },
+    {
+      "episode": 80.0,
+      "total_reward": 34.671776530902186,
+      "reward_per_step": 0.6934355306180437,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 81.0,
+      "total_reward": 49.07492572434984,
+      "reward_per_step": 0.9814985144869968,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 82.0,
+      "total_reward": 18.489572062480935,
+      "reward_per_step": 0.6603418593743191,
+      "steps": 28.0,
+      "success": 1.0
+    },
+    {
+      "episode": 83.0,
+      "total_reward": 32.8596710450203,
+      "reward_per_step": 0.657193420900406,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 84.0,
+      "total_reward": 24.401260976335234,
+      "reward_per_step": 0.4880252195267047,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 85.0,
+      "total_reward": 34.135574540350504,
+      "reward_per_step": 0.6827114908070101,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 86.0,
+      "total_reward": 30.12740175228764,
+      "reward_per_step": 0.6025480350457528,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 87.0,
+      "total_reward": 38.10065540072936,
+      "reward_per_step": 0.7620131080145872,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 88.0,
+      "total_reward": 26.86075454091706,
+      "reward_per_step": 0.5372150908183412,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 89.0,
+      "total_reward": 11.484195879849405,
+      "reward_per_step": 0.2296839175969881,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 90.0,
+      "total_reward": 36.19438876378654,
+      "reward_per_step": 0.7238877752757308,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 91.0,
+      "total_reward": 3.568648687903521,
+      "reward_per_step": 0.07137297375807042,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 92.0,
+      "total_reward": 35.173414548695995,
+      "reward_per_step": 0.7034682909739199,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 93.0,
+      "total_reward": 36.65465724058965,
+      "reward_per_step": 0.733093144811793,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 94.0,
+      "total_reward": 14.87483933968419,
+      "reward_per_step": 0.2974967867936838,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 95.0,
+      "total_reward": 26.91505730783567,
+      "reward_per_step": 0.5383011461567134,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 96.0,
+      "total_reward": 30.481375866144194,
+      "reward_per_step": 0.6096275173228839,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 97.0,
+      "total_reward": 30.35033118827172,
+      "reward_per_step": 0.6070066237654345,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 98.0,
+      "total_reward": 38.51883476375888,
+      "reward_per_step": 0.7703766952751776,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 99.0,
+      "total_reward": 27.430027975030928,
+      "reward_per_step": 0.5486005595006186,
+      "steps": 50.0,
+      "success": 0.0
+    },
+    {
+      "episode": 100.0,
+      "total_reward": 10.204821236577681,
+      "reward_per_step": 0.20409642473155362,
+      "steps": 50.0,
+      "success": 0.0
+    }
+  ],
+  "config": {
+    "checkpoint_path": "/mnt/beegfs/LLM/onuralpguvercin/ROBOTICS/runs/hw2/dqn/best.pt",
+    "state_mode": "high_level",
+    "n_actions": 8,
+    "max_timesteps": 50,
+    "n_eval_episodes": 100,
+    "seed": 42,
+    "device": "cuda",
+    "render_mode": "offscreen"
+  }
+}

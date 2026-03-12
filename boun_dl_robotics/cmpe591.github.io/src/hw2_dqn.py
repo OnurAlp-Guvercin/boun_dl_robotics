@@ -24,9 +24,9 @@ STATE_CHOICES = [STATE_HIGH_LEVEL, STATE_PIXELS]
 
 CMD_TRAIN = "train"
 CMD_TEST = "test"
-DEFAULT_COMMAND = CMD_TRAIN
+DEFAULT_COMMAND = CMD_TEST
 
-DEFAULT_RUN_DIR = "runs/hw2/dqn"
+DEFAULT_RUN_DIR = "runs_new_2/hw2/dqn"
 DEFAULT_DEVICE = "auto"
 DEFAULT_RENDER_MODE = "offscreen" # offscreen or gui
 DEFAULT_STATE_MODE = STATE_HIGH_LEVEL
@@ -36,15 +36,15 @@ DEFAULT_N_ACTIONS = 8
 DEFAULT_MAX_TIMESTEPS = 50
 DEFAULT_N_EPISODES = 2_500
 DEFAULT_BATCH_SIZE = 128
-DEFAULT_GAMMA = 0.99
-DEFAULT_EPSILON = 0.9
-DEFAULT_EPSILON_MIN = 0.05
-DEFAULT_EPSILON_DECAY = 10_000
-DEFAULT_TAU = 0.005
-DEFAULT_LR = 1e-4
+DEFAULT_GAMMA = 0.995
+DEFAULT_EPSILON = 1.0
+DEFAULT_EPSILON_MIN = 0.10
+DEFAULT_EPSILON_DECAY = 20_000
+DEFAULT_TAU = 0.01
+DEFAULT_LR = 5e-5
 DEFAULT_WEIGHT_DECAY = 1e-4
-DEFAULT_REPLAY_BUFFER_SIZE = 10_000
-DEFAULT_WARMUP_EPISODES = 0
+DEFAULT_REPLAY_BUFFER_SIZE = 20_000
+DEFAULT_WARMUP_EPISODES = 100
 DEFAULT_LEARN_UPDATES = 1
 
 DEFAULT_SEED = 42
@@ -52,9 +52,9 @@ DEFAULT_GRAD_CLIP = 5.0
 DEFAULT_LOG_EVERY = 25
 DEFAULT_EVAL_EPISODES = 100
 DEFAULT_EVAL_EPSILON = 0.0
-DEFAULT_NUM_COLLECTORS = 1
-DEFAULT_COLLECTOR_QUEUE_SIZE = 20_000
-DEFAULT_COLLECTOR_SYNC_UPDATES = 200
+DEFAULT_NUM_COLLECTORS = 16
+DEFAULT_COLLECTOR_QUEUE_SIZE = 40_000
+DEFAULT_COLLECTOR_SYNC_UPDATES = 25
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -65,7 +65,7 @@ class EpisodeMetric(TypedDict):
     reward_per_step: float
     steps: float
     epsilon: float
-    mean_loss: float | None
+    mean_loss: Optional[float]
     replay_size: float
 
 
@@ -547,7 +547,7 @@ def train(
                             total_updates += 1
 
             reward_per_step = total_reward / max(1, episode_steps)
-            mean_loss: float | None = float(np.mean(losses)) if len(losses) > 0 else None
+            mean_loss: Optional[float] = float(np.mean(losses)) if len(losses) > 0 else None
             episode_history.append(
                 {
                     "episode": episode,
@@ -642,7 +642,7 @@ def train(
                                 _queue_replace_latest(cmd_q, ("set_epsilon", epsilon_value))
 
                         reward_per_step = float(total_reward) / max(1, int(episode_steps))
-                        mean_loss: float | None = (
+                        mean_loss: Optional[float] = (
                             float(np.mean(recent_losses)) if len(recent_losses) > 0 else None
                         )
                         episode_history.append(

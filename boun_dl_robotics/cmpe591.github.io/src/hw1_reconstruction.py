@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass
 from multiprocessing import Process
 from pathlib import Path
-from typing import Dict, List, Optional, TypeAlias, cast
+from typing import Dict, List, Optional, cast
 from collections.abc import Sized
 
 import numpy as np
@@ -17,7 +17,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 from homework1 import Hw1Env
 
-Sample: TypeAlias = Dict[str, torch.Tensor]
+Sample = Dict[str, torch.Tensor]
 
 
 N_ACTIONS = 4
