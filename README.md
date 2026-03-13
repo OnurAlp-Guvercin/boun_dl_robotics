@@ -13,15 +13,6 @@ This repository contains implementations for all HW1 deliverables:
 - Deliverable 3: `src/hw1_reconstruction.py`
 - Homework 2 (DQN): `src/hw2_dqn.py`
 
-### Direct Source Links
-
-- [hw1_cnn_position.py](boun_dl_robotics/cmpe591.github.io/src/hw1_cnn_position.py)
-- [hw1_mlp_position.py](boun_dl_robotics/cmpe591.github.io/src/hw1_mlp_position.py)
-- [hw1_reconstruction.py](boun_dl_robotics/cmpe591.github.io/src/hw1_reconstruction.py)
-- [hw2_dqn.py](boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py)
-
-Each script supports `collect`, `train`, and `test` commands.
-
 ## Data Collection
 
 ```bash
@@ -134,16 +125,7 @@ Assignment 2 implementation is provided in:
 - `src/hw2_dqn.py`
 
 The script includes separate `train()` and `test()` functions with CLI commands.
-By default, training uses `high_level_state` (as requested in the assignment) and supports optional pixel-state training.
-
-## HW2 Setup
-
-```bash
-source robotic_env/bin/activate
-```
-
-Python compatibility:
-- Python 3.9 and 3.11 are supported by the homework scripts.
+By default, training uses `high_level_state` and supports optional pixel-state training.
 
 ## HW2 Train
 
@@ -177,129 +159,43 @@ python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py test \
 
 Training artifacts:
 
-- `<run_dir>/best.pt`
-- `<run_dir>/last.pt`
-- `<run_dir>/train_metrics.json`
-- `<run_dir>/reward_plot.png`
-- `<run_dir>/rps_plot.png`
+- `runs/hw2/dqn_n/best.pt`
+- `runs/hw2/dqn_n/last.pt`
+- `runs/hw2/dqn_n/train_metrics.json`
+- `runs/hw2/dqn_n/reward_plot.png`
+- `runs/hw2/dqn_n/rps_plot.png`
 
 Test artifact:
 
-- `<run_dir>/test_results.json`
+- `runs/hw2/dqn_n/test_results.json`
 
 ## HW2 Report Section
 
-### What Instructor Asks (Per Run)
+### Multi-Run Comparison
 
-For each run, include these 3 items in `README.md`:
+I trained each run in a separate folder and evaluated all of them with 100 test episodes. The comparison is broadly fair, but there is one important caveat: Run-1 was trained with `max_timesteps=30`, while Run-2 and Run-3 were trained with `max_timesteps=50`. This means Run-1 saw a shorter decision horizon during training, so its results should be interpreted with that limitation in mind.
 
-1. What hyperparameters you changed
-2. How performance changed (reward / reward-per-step / success rate)
-3. Short discussion of why this change produced that effect
-
-### Instructor Reference Hyperparameters (From Email)
-
-The instructor shared the following state-based set as a reference:
-
-| Hyperparameter | Value |
-| --- | ---: |
-| memory_size (`n_replay_buffer`) | 10000 |
-| num_episodes (`n_episodes`) | 2500 |
-| batch_size | 128 |
-| eps_decay | 10000 |
-| eps_end (`epsilon_min`) | 0.05 |
-| eps_start (`epsilon`) | 0.9 |
-| gamma | 0.99 |
-| learning_rate (`lr`) | 0.0001 |
-| tau (soft target update) | 0.005 |
-
-### Current Code Defaults (`src/hw2_dqn.py`)
-
-The current defaults in code (used for the latest trial setup) are:
-
-| Hyperparameter | Value |
-| --- | ---: |
-| memory_size (`n_replay_buffer`) | 20000 |
-| num_episodes (`n_episodes`) | 2500 |
-| batch_size | 128 |
-| eps_decay | 20000 |
-| eps_end (`epsilon_min`) | 0.10 |
-| eps_start (`epsilon`) | 1.0 |
-| gamma | 0.995 |
-| learning_rate (`lr`) | 0.00005 |
-| tau (soft target update) | 0.01 |
-| warmup_episodes (`n_warmup_episodes`) | 100 |
-| num_collectors | 16 |
-| collector_sync_updates | 25 |
-
-### Recommended Train Command (Current Defaults)
-
-```bash
-python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py train \
-  --state-mode high_level \
-  --render-mode offscreen
-```
-
-### Reproducing Instructor Set (Optional)
-
-```bash
-python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py train \
-  --state-mode high_level \
-  --n-episodes 2500 \
-  --batch-size 128 \
-  --epsilon 0.9 \
-  --epsilon-min 0.05 \
-  --epsilon-decay 10000 \
-  --gamma 0.99 \
-  --lr 1e-4 \
-  --tau 0.005 \
-  --n-replay-buffer 10000
-```
-
-### Baseline Result (Before This Update)
-
-This baseline is from the previous run file:
-- `runs/hw2/dqn_1/train_metrics.json`
-
-| Metric | Value |
-| --- | ---: |
-| Episodes | 3000 |
-| Best Reward | 30.8804 |
-| Final Epsilon | 0.0209 |
-| Total Updates | 121864 |
-| Reward Mean (all episodes) | 10.6222 |
-| Reward/Step Mean (all episodes) | 0.3579 |
-| Reward Mean (last 50 episodes) | 13.9764 |
-| Reward/Step Mean (last 50 episodes) | 0.4789 |
-| Reward Mean (last 100 episodes) | 13.7801 |
-| Reward/Step Mean (last 100 episodes) | 0.4659 |
-| Reward Mean (last 200 episodes) | 14.4158 |
-| Reward/Step Mean (last 200 episodes) | 0.4866 |
-
-### Multi-Run Comparison (HW2)
-
-I trained each run in a separate folder and evaluated with 100 test episodes for a fair comparison.
-
-| Run | What I changed | What happened | My take |
+| Run | What I changed | What happened | Interpretation |
 | --- | --- | --- | --- |
-| Run-1 | More aggressive setup: `n_episodes=3000`, `batch_size=256`, `gamma=0.95`, `lr=1e-3`, `tau=0.001`, fast exploration decay (`epsilon=0.4` to `0.01`), and `n_warmup_episodes=50`. | Test (`runs/hw2/dqn_1/test_results.json`): mean reward `23.84`, mean RPS `0.4940`, success rate `5%`. | It learns dense reward quickly, but this does not consistently turn into goal-reaching behavior. |
-| Run-2 | Mostly instructor-style setup: `n_episodes=2500`, `batch_size=128`, `gamma=0.99`, `lr=1e-4`, `tau=0.005`, `epsilon=0.9` to `0.05` (`decay=10000`), with a larger replay size `50000`. | Test (`runs/hw2/dqn_2/test_results.json`): mean reward `23.98`, mean RPS `0.4869`, success rate `2%`, lower reward variance (`std 12.15 -> 8.62`). | Compared to Run-1, behavior is more stable but also more conservative; it keeps reward variance lower, yet converts less often to terminal success. |
-| Run-3 | More exploration-heavy/stable setup: `n_episodes=2500`, `batch_size=128`, `gamma=0.995`, `lr=5e-5`, `tau=0.01`, `epsilon=1.0` to `0.1` (`decay=20000`), `n_replay_buffer=20000`, `n_warmup_episodes=100`, `collector_sync_updates=25`. | Test (`runs/hw2/dqn_3/test_results.json`): mean reward `7.51`, mean RPS `0.1503`, success rate `0%`, mean steps `50.0`. | This setting stayed too exploratory and conservative for this task. The policy did not converge to goal-reaching behavior, and episodes almost always timed out. |
+| Run-1 | More aggressive setup: `n_episodes=3000`, `batch_size=256`, `gamma=0.95`, `lr=1e-3`, `tau=0.001`, fast exploration decay (`epsilon=0.4` to `0.01`), `n_warmup_episodes=50`, and `max_timesteps=30` during training. | Test (`runs/hw2/dqn_1/test_results.json`): mean reward `23.84`, mean RPS `0.4940`, success rate `5%`, mean steps `48.6`. | This run reached the highest success rate, which suggests that the more aggressive optimization helped the agent find useful behavior faster. However, the lower `gamma` and shorter training horizon likely pushed the agent toward short-term reward collection rather than reliable long-horizon planning. That explains why the average reward is good, but the success rate is still only `5%`. |
+| Run-2 | More conservative setup: `n_episodes=2500`, `batch_size=128`, `gamma=0.99`, `lr=1e-4`, `tau=0.005`, `epsilon=0.9` to `0.05` (`decay=10000`), `n_replay_buffer=50000`, and `max_timesteps=50`. | Test (`runs/hw2/dqn_2/test_results.json`): mean reward `23.98`, mean RPS `0.4869`, success rate `2%`, mean steps `49.46`, and lower reward variance than Run-1 (`8.62` vs `12.15`). | Run-2 produced the best mean reward, but it did so with fewer successful episodes. This combination suggests a more stable policy that learned how to collect reward consistently, yet often failed to convert that behavior into task completion. The higher `gamma`, smaller learning rate, and larger replay buffer likely made learning smoother, but also reduced the chance of quickly locking onto the few trajectories that actually end in success. |
+| Run-3 | More exploration-heavy and slower-learning setup: `n_episodes=2500`, `batch_size=128`, `gamma=0.995`, `lr=5e-5`, `tau=0.01`, `epsilon=1.0` to `0.1` (`decay=20000`), `n_replay_buffer=20000`, `n_warmup_episodes=100`, `collector_sync_updates=25`, and `max_timesteps=50`. | Test (`runs/hw2/dqn_3/test_results.json`): mean reward `7.51`, mean RPS `0.1503`, success rate `0%`, mean steps `50.0`. | Run-3 underperformed clearly. The final training epsilon stayed around `0.10`, so the agent remained relatively exploratory even near the end of training. Combined with the smaller learning rate and long exploration schedule, this likely slowed down convergence too much for a `2500`-episode budget. As a result, the policy neither accumulated dense reward efficiently nor learned goal-reaching behavior, and test episodes almost always ran until the time limit. |
+
+Overall, the three runs are consistent with a common pattern: the agent learned to improve dense reward more easily than it learned to finish the task reliably. Run-1 favored faster adaptation and occasionally reached the goal, but its behavior was less stable. Run-2 was the most balanced in terms of average reward and variance, yet it still behaved conservatively at test time. Run-3 appears to have kept exploring for too long and did not exploit what it had learned strongly enough. For this homework, that makes Run-2 the strongest result in terms of average test performance, while Run-1 is the most interesting result in terms of actual task completion.
 
 ### Test Results
 
-Source file (latest run): `runs/hw2/dqn_3/test_results.json`
+Source files: `runs/hw2/dqn_1/test_results.json`, `runs/hw2/dqn_2/test_results.json`, `runs/hw2/dqn_3/test_results.json`
 
-| Metric | Value |
-| --- | ---: |
-| Evaluation Episodes | 100 |
-| Epsilon (test) | 0.0 |
-| Mean Total Reward | 7.5141 |
-| Std Total Reward | 4.8327 |
-| Mean Reward per Step | 0.1503 |
-| Std Reward per Step | 0.0967 |
-| Mean Steps | 50.0 |
-| Success Rate | 0.0000 (0.0%) |
+| Metric | DQN-1 | DQN-2 | DQN-3 |
+| --- | ---: | ---: | ---: |
+| Evaluation Episodes | 100 | 100 | 100 |
+| Mean Total Reward | 23.8417 | 23.9787 | 7.5141 |
+| Std Total Reward | 12.1532 | 8.6171 | 4.8327 |
+| Mean Reward per Step | 0.4940 | 0.4869 | 0.1503 |
+| Std Reward per Step | 0.2412 | 0.1753 | 0.0967 |
+| Mean Steps | 48.6 | 49.46 | 50.0 |
+| Success Rate | 0.0500 (5.0%) | 0.0200 (2.0%) | 0.0000 (0.0%) |
 
 ### Reward Curves
 
