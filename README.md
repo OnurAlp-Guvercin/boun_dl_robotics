@@ -1,4 +1,4 @@
-# CMPE591 - Homework 1 & Homework 2
+# CMPE591 - Homework 1, Homework 2 & Homework 4
 
 This repository contains implementations for all HW1 deliverables:
 
@@ -12,6 +12,7 @@ This repository contains implementations for all HW1 deliverables:
 - Deliverable 2: `src/hw1_cnn_position.py`
 - Deliverable 3: `src/hw1_reconstruction.py`
 - Homework 2 (DQN): `src/hw2_dqn.py`
+- Homework 4 (CNMP): `src/hw4_cnmp.py`
 
 ## Data Collection
 
@@ -213,3 +214,90 @@ Run-3 (`runs/hw2/dqn_3`)
 
 ![HW2 Reward Run-3](runs/hw2/dqn_3/reward_plot.png)
 ![HW2 Reward per Step Run-3](runs/hw2/dqn_3/rps_plot.png)
+
+---
+
+# CMPE591 - Homework 4 (CNMP)
+
+Assignment 4 implementation is provided in:
+
+- `src/hw4_cnmp.py`
+
+The script implements a conditional neural movement primitive for learning from demonstrations. Context points contain time and trajectory state `[t, e_y, e_z, o_y, o_z]`, while the decoder is conditioned on query time and object height `h`. The model predicts end-effector and object `yz` coordinates.
+
+## HW4 Data Collection
+
+Run from the project root:
+
+```bash
+python boun_dl_robotics/cmpe591.github.io/src/hw4_cnmp.py collect \
+  --num-trajectories 200 \
+  --steps 100
+```
+
+Collected data is stored under:
+
+- `data/hw4/hw4_dataset.pt`
+- `data/hw4/hw4_train.pt`
+- `data/hw4/hw4_val.pt`
+- `data/hw4/hw4_test.pt`
+- `data/hw4/hw4_split_meta.json`
+
+The final dataset contains 200 trajectories split as 160 train, 20 validation, and 20 test trajectories.
+
+## HW4 Train
+
+```bash
+python boun_dl_robotics/cmpe591.github.io/src/hw4_cnmp.py train \
+  --epochs 500
+```
+
+Training artifacts:
+
+- `runs/hw4/cnmp/best.pt`
+- `runs/hw4/cnmp/train_metrics.json`
+- `runs/hw4/cnmp/loss_plot.png`
+
+The best validation checkpoint was selected at epoch 415:
+
+| Metric | Value |
+| --- | ---: |
+| Total Epochs | 500 |
+| Best Epoch | 415 |
+| Best Train NLL | -0.9114 |
+| Best Validation NLL | -1.1223 |
+| Final Epoch Train NLL | -0.9692 |
+| Final Epoch Validation NLL | -0.9507 |
+
+The validation loss decreases strongly during training and remains better than the final-epoch validation loss at the selected checkpoint, so the saved `best.pt` model is the appropriate model to report.
+
+## HW4 Test
+
+```bash
+python boun_dl_robotics/cmpe591.github.io/src/hw4_cnmp.py test \
+  --n-tests 200
+```
+
+Test artifacts:
+
+- `runs/hw4/cnmp/test_results.json`
+- `runs/hw4/cnmp/hw4_cnmp_mse_bar.png`
+
+### Test Results
+
+Source file: `runs/hw4/cnmp/test_results.json`
+
+| Metric | Object | End-effector |
+| --- | ---: | ---: |
+| Random Context/Query Tests | 200 | 200 |
+| Mean MSE | 0.0004163 | 0.0006200 |
+| Std MSE | 0.0006418 | 0.0006578 |
+| RMSE | 0.0204 | 0.0249 |
+
+The object trajectory is predicted slightly more accurately than the end-effector trajectory. Both errors are small in coordinate space, with RMSE values around 2.0 cm for the object and 2.5 cm for the end-effector.
+
+### HW4 Curves and MSE Plot
+
+![HW4 CNMP Loss](runs/hw4/cnmp/loss_plot.png)
+
+![HW4 CNMP MSE Bar](runs/hw4/cnmp/hw4_cnmp_mse_bar.png)
