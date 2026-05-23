@@ -46,6 +46,7 @@ DEFAULT_USE_GT_BBOX = False   # train with VLM bboxes to match inference distrib
 DEFAULT_VLM_URL     = "http://localhost:8000"
 DEFAULT_VLM_MODEL   = "Qwen3"
 DEFAULT_VLM_WORKERS = 8
+DEFAULT_HORIZON     = 1
 ACTION_SCALE_NP     = ACTION_SCALE.numpy()
 
 
@@ -132,9 +133,9 @@ def preprocess_vlm_bboxes(
 
 class TrajectoryDataset(Dataset):
     """
-    Sliding one-step samples:
+    Sliding multi-step samples:
       x: (7,) float32 = [fixed initial bbox(4), ee_norm(3)]
-      y: (3,) float32 = clipped EE delta / ACTION_SCALE
+      y: (3*HORIZON,) float32 = clipped EE deltas / ACTION_SCALE
     """
 
     def __init__(
@@ -143,8 +144,10 @@ class TrajectoryDataset(Dataset):
         traj_paths: Optional[list[Path]] = None,
         vlm_cache: Optional[dict] = None,
         use_gt_bbox: bool = False,
+        horizon: int = 1,
     ) -> None:
         self.samples: list[tuple[np.ndarray, np.ndarray]] = []
+        self.horizon = horizon
 
         data_path = Path(data_dir)
         paths = traj_paths if traj_paths is not None else _load_traj_paths(data_path)
@@ -158,22 +161,27 @@ class TrajectoryDataset(Dataset):
 
             ee_positions = traj["ee_positions"].numpy()
             gt_bboxes = traj["gt_bboxes"].numpy()
-            if ee_positions.shape[0] < 2:
+            if ee_positions.shape[0] < horizon + 1:
                 continue
 
             cached_bbox = None if use_gt_bbox or not vlm_cache else _cache_bbox_for_path(vlm_cache, path.name)
             fixed_bbox = gt_bboxes[0] if cached_bbox is None else cached_bbox
 
-            for t in range(ee_positions.shape[0] - 1):
+            for t in range(ee_positions.shape[0] - horizon):
                 x = bbox_to_input(fixed_bbox, ee_positions[t])
-                delta = (ee_positions[t + 1] - ee_positions[t]) / ACTION_SCALE_NP
-                y = np.clip(delta, -1.0, 1.0).astype(np.float32)
+                # Extract horizon deltas and stack
+                deltas = []
+                for h in range(horizon):
+                    delta = (ee_positions[t + h + 1] - ee_positions[t + h]) / ACTION_SCALE_NP
+                    delta = np.clip(delta, -1.0, 1.0).astype(np.float32)
+                    deltas.append(delta)
+                y = np.concatenate(deltas, axis=0).astype(np.float32)
                 self.samples.append((x, y))
 
         if not self.samples:
             raise RuntimeError(
-                "No training samples extracted. Check that trajectories were "
-                "saved with success=True and have at least 2 steps."
+                f"No training samples extracted. Check that trajectories were "
+                f"saved with success=True and have at least {horizon + 1} steps."
             )
 
     def __len__(self) -> int:
@@ -277,6 +285,7 @@ def build_split_loaders(
     test_ratio: float = 0.1,
     seed: int = 42,
     use_gt_bbox: bool = False,
+    horizon: int = 1,
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
     """Load dataset, split, return (train, val, test) DataLoaders."""
     data_path = Path(data_dir)
@@ -296,13 +305,13 @@ def build_split_loaders(
         seed=seed,
     )
     train_ds = TrajectoryDataset(
-        data_dir, traj_paths=train_paths, vlm_cache=vlm_cache, use_gt_bbox=use_gt_bbox
+        data_dir, traj_paths=train_paths, vlm_cache=vlm_cache, use_gt_bbox=use_gt_bbox, horizon=horizon
     )
     val_ds = TrajectoryDataset(
-        data_dir, traj_paths=val_paths, vlm_cache=vlm_cache, use_gt_bbox=use_gt_bbox
+        data_dir, traj_paths=val_paths, vlm_cache=vlm_cache, use_gt_bbox=use_gt_bbox, horizon=horizon
     )
     test_ds = TrajectoryDataset(
-        data_dir, traj_paths=test_paths, vlm_cache=vlm_cache, use_gt_bbox=use_gt_bbox
+        data_dir, traj_paths=test_paths, vlm_cache=vlm_cache, use_gt_bbox=use_gt_bbox, horizon=horizon
     )
 
     print(
@@ -311,6 +320,7 @@ def build_split_loaders(
     )
     print(f"[dataset] samples: train={len(train_ds)}, val={len(val_ds)}, test={len(test_ds)}")
     print(f"[dataset] strata: {len(split_counts)} color/shape groups")
+    print(f"[dataset] horizon: {horizon}")
 
     kw = dict(batch_size=batch_size, num_workers=0)
     return (
@@ -381,6 +391,7 @@ def train(
     seed:         int   = DEFAULT_SEED,
     device:       str   = DEFAULT_DEVICE,
     use_gt_bbox:  bool  = DEFAULT_USE_GT_BBOX,
+    horizon:      int   = DEFAULT_HORIZON,
 ) -> dict:
     set_seeds(seed)
     dev     = resolve_device(device)
@@ -394,9 +405,10 @@ def train(
         test_ratio=test_ratio,
         seed=seed,
         use_gt_bbox=use_gt_bbox,
+        horizon=horizon,
     )
 
-    model     = NavigationMLP().to(dev)
+    model     = NavigationMLP(horizon=horizon).to(dev)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     loss_fn   = nn.SmoothL1Loss(beta=0.05)
 
@@ -459,6 +471,7 @@ def train(
             torch.save({
                 "model_state": model.state_dict(),
                 "epoch": epoch,
+                "horizon": horizon,
                 "policy_type": "residual_delta_mlp",
                 "action_scale": ACTION_SCALE_NP.tolist(),
             }, out_dir / "best.pt")
@@ -480,6 +493,7 @@ def train(
         "test_mae":     test_met["mae"],
         "test_rmse":    test_met["rmse"],
         "policy_type":  "residual_delta_mlp",
+        "horizon":      horizon,
         "action_scale": ACTION_SCALE_NP.tolist(),
         "target":       "delta_ee / action_scale",
         "loss":         "SmoothL1Loss(beta=0.05)",
@@ -509,6 +523,10 @@ def main() -> None:
     p.add_argument("--test-ratio",    type=float, default=DEFAULT_TEST_RATIO)
     p.add_argument("--seed",          type=int,   default=DEFAULT_SEED)
     p.add_argument("--device",        type=str,   default=DEFAULT_DEVICE)
+    p.add_argument("--horizon",       type=int,   default=DEFAULT_HORIZON,
+                   help="Planning horizon (single value)")
+    p.add_argument("--horizons",      type=int,   nargs="+",
+                   help="Multiple horizons to train (overrides --horizon)")
     p.add_argument("--use-gt-bbox",   action="store_true",
                    help="Train with GT bboxes instead of VLM (ablation only)")
     p.add_argument("--preprocess-vlm", action="store_true",
@@ -517,6 +535,7 @@ def main() -> None:
     p.add_argument("--vlm-model",     type=str,   default=DEFAULT_VLM_MODEL)
     p.add_argument("--vlm-workers",   type=int,   default=DEFAULT_VLM_WORKERS)
     args = p.parse_args()
+
     if args.preprocess_vlm:
         preprocess_vlm_bboxes(
             data_dir=args.data_dir,
@@ -526,10 +545,68 @@ def main() -> None:
         )
         return
 
-    train_kwargs = vars(args)
-    for key in ("preprocess_vlm", "vlm_url", "vlm_model", "vlm_workers"):
-        train_kwargs.pop(key)
-    train(**train_kwargs)
+    # If multiple horizons provided, loop through each
+    horizons = args.horizons if args.horizons else [args.horizon]
+
+    if len(horizons) > 1:
+        print(f"\n{'='*70}")
+        print(f"Training multiple horizons: {horizons}")
+        print(f"{'='*70}\n")
+        results = {}
+
+        for h in horizons:
+            run_dir = f"{args.run_dir.replace('navigation', f'nav_h{h}')}"
+            print(f"\n{'='*70}")
+            print(f"Training HORIZON={h}")
+            print(f"{'='*70}\n")
+
+            train_kwargs = {
+                "data_dir": args.data_dir,
+                "run_dir": run_dir,
+                "epochs": args.epochs,
+                "batch_size": args.batch_size,
+                "lr": args.lr,
+                "weight_decay": args.weight_decay,
+                "grad_clip": args.grad_clip,
+                "warmup_epochs": args.warmup_epochs,
+                "val_ratio": args.val_ratio,
+                "test_ratio": args.test_ratio,
+                "seed": args.seed,
+                "device": args.device,
+                "use_gt_bbox": args.use_gt_bbox,
+                "horizon": h,
+            }
+            metrics = train(**train_kwargs)
+            results[h] = {
+                "status": "success",
+                "checkpoint": f"{run_dir}/best.pt",
+                "test_mse": metrics.get("test_mse"),
+                "test_rmse": metrics.get("test_rmse"),
+            }
+
+        # Summary
+        print(f"\n{'='*70}")
+        print("TRAINING SUMMARY")
+        print(f"{'='*70}")
+        print(f"{'Horizon':<10} {'Test MSE':<15} {'Test RMSE':<15}")
+        print("-" * 40)
+        for h in sorted(results.keys()):
+            res = results[h]
+            if res["status"] == "success":
+                print(f"{h:<10} {res['test_mse']:<15.6f} {res['test_rmse']:<15.6f}")
+
+        # Save summary
+        summary_path = Path(args.run_dir).parent / "train_summary.json"
+        with open(summary_path, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"\nSummary saved to {summary_path}\n")
+    else:
+        # Single horizon
+        train_kwargs = vars(args)
+        for key in ("preprocess_vlm", "vlm_url", "vlm_model", "vlm_workers", "horizons"):
+            train_kwargs.pop(key, None)
+        train_kwargs["horizon"] = horizons[0]
+        train(**train_kwargs)
 
 
 if __name__ == "__main__":

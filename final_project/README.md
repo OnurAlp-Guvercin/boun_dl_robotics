@@ -28,16 +28,6 @@ Veya terminal'de `Ctrl+C` basın.
 
 ---
 
-## Düzeltilen Hatalar
-
-| Hata | Sonuç | Düzeltme |
-|------|-------|----------|
-| `world_to_pixel` yanlış depth işareti | `gt_bbox` her zaman `(0.5, 0.5)` → model konumu hiç öğrenmedi | `depth = -p_cam[2]` yapıldı |
-| Eğitim GT bbox, inference VLM bbox | Distribution shift → %0 başarı | Eğitim GT bbox ile, VLM robustluğu inference tarafından sağlanır |
-| Yetersiz veri (639 sample) | 48 trajektori az | Daha fazla sahne toplanmalı |
-
----
-
 ## Proje Yapısı
 
 ```
@@ -46,14 +36,17 @@ final_project/
 │   ├── env.py          – MuJoCo ortamı (rastgele nesneli sahneler)
 │   ├── utils.py        – Kamera projeksiyonu, EE normalizasyonu, bbox hesaplama
 │   ├── collect.py      – Veri toplama
-│   ├── dataset.py      – Dataset loader
-│   ├── model.py        – NavigationMLP (behaviour cloning)
-│   ├── train.py        – Eğitim döngüsü
+│   ├── model.py        – NavigationMLP (behaviour cloning, configurable horizon)
+│   ├── train.py        – Eğitim döngüsü (--horizon / --horizons parameter)
 │   ├── vlm_client.py   – VLM HTTP istemcisi (vLLM / OpenAI uyumlu)
-│   ├── inference.py    – Kapalı döngü inference + değerlendirme
+│   ├── inference.py    – Kapalı döngü inference + değerlendirme (--horizon / --horizons)
 │   └── visualize.py    – Görselleştirme
 ├── data/trajectories/  – Toplanan trajektori dosyaları (*.pt)
-└── runs/navigation/    – Model checkpointleri ve metrikler
+└── runs/
+    ├── nav_h1/, nav_h2/, ...  – Horizon-specific model checkpointleri
+    ├── vis_h1/, vis_h2/, ...  – Horizon-specific inference sonuçları
+    ├── train_summary.json     – Training ablation özeti
+    └── inference_summary.json – Inference ablation özeti
 ```
 
 Tüm komutlar proje kökünden (`/mnt/beegfs/LLM/onuralpguvercin/ROBOTICS`) çalıştırılır.
@@ -99,41 +92,61 @@ MUJOCO_GL=egl /trinity/home/onuralpguvercin/.conda/envs/robotic_env_311/bin/pyth
 
 ### Adım 3 — Modeli Eğit
 
-**Ne yapar:** GT bbox'lar ile `(bbox + ee_pos) → sonraki 5 waypoint` ilişkisini öğrenir. MLP mimarisi: 7 → 256 → 256 → 256 → 15.
+**Ne yapar:** GT bbox'lar ile `(bbox + ee_pos) → horizon adım delta` ilişkisini öğrenir.
 
 ```bash
-/trinity/home/onuralpguvercin/.conda/envs/robotic_env_311/bin/python \
-  final_project/src/train.py \
+# Tek horizon
+python final_project/src/train.py \
+  --horizon 1 \
   --data-dir final_project/data/trajectories \
-  --run-dir final_project/runs/navigation \
+  --run-dir final_project/runs/nav_h1 \
   --epochs 200
 ```
 
+**Ya da çoklu horizons (1-5):**
+```bash
+python final_project/src/train.py \
+  --horizons 1 2 3 4 5 \
+  --data-dir final_project/data/trajectories \
+  --run-dir final_project/runs/navigation \
+  --epochs 200 \
+  --batch-size 128
+```
+
 **Çıktı:**
-- `runs/navigation/best.pt` — en iyi checkpoint
-- `runs/navigation/train_metrics.json` — epoch bazlı metrikler
-- `runs/navigation/loss_plot.png` — eğitim eğrisi
+- `runs/nav_h1/best.pt`, `runs/nav_h2/best.pt`, ... — her horizon için model
+- `runs/train_summary.json` — özet (test_mse per horizon)
 
 ---
 
 ### Adım 4 — Inference Al
 
-**Ne yapar:** Eğitilen modeli VLM ile kapalı döngüde test eder. Her 5 adımda VLM'e bbox sorar, MLP 5 waypoint tahmin eder, robot kolu oraya gider.
+**Ne yapar:** Eğitilen modeli VLM ile kapalı döngüde test eder.
 
 ```bash
-MUJOCO_GL=egl /trinity/home/onuralpguvercin/.conda/envs/robotic_env_311/bin/python \
-  final_project/src/inference.py \
-  --checkpoint final_project/runs/navigation/best.pt \
+# Tek horizon
+MUJOCO_GL=egl python final_project/src/inference.py \
+  --checkpoint final_project/runs/nav_h1/best.pt \
+  --horizon 1 \
   --n-episodes 50 \
   --vlm-url http://localhost:8000 \
-  --vlm-model Qwen3 \
-  --out-dir final_project/runs/vis \
+  --out-dir final_project/runs/vis_h1 \
+  --save-vis
+```
+
+**Ya da çoklu horizons (1-5):**
+```bash
+MUJOCO_GL=egl python final_project/src/inference.py \
+  --horizons 1 2 3 4 5 \
+  --n-episodes 20 \
+  --vlm-url http://localhost:8000 \
+  --out-dir final_project/runs \
   --save-vis
 ```
 
 **Çıktı:**
-- `runs/vis/eval_results.json` — her episode: başarı/başarısız, adım sayısı, son mesafe
-- `runs/vis/vis_episodes/ep000_red_box_0_frames.png` — her episode için 10 frame (sarı = VLM sorgu anı, kırmızı = sonraki adımlar)
+- `runs/vis_h1/eval_results.json`, `runs/vis_h2/eval_results.json`, ... — her horizon sonuçları
+- `runs/inference_summary.json` — özet (success_rate vs horizon)
 
 ---
 
@@ -184,25 +197,28 @@ MUJOCO_GL=egl /trinity/home/onuralpguvercin/.conda/envs/robotic_env_311/bin/pyth
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                     INFERENCE DÖNGÜSÜ                        │
+│                    (Configurable HORIZON)                    │
 │                                                              │
 │  env.reset() → hedef nesne seç                               │
 │       │                                                      │
 │       ▼                                                      │
-│  ┌─────────┐   görüntü + nesne adı   ┌──────────┐           │
-│  │ MuJoCo  │ ──────────────────────▶ │  Qwen3   │           │
-│  │   Env   │ ◀─── bbox (cx,cy,w,h) ─ │  :8000   │           │
-│  └────┬────┘                          └──────────┘           │
+│  ┌─────────┐   görüntü + nesne adı     ┌──────────┐          │
+│  │ MuJoCo  │ --------------------->    │  Qwen3   │          │
+│  │   Env   │ <-- bbox (cx,cy,w,h) ─    │  :8000   │          │
+│  └────┬────┘                           └──────────┘          │
 │       │ ee_pos                                               │
 │       ▼                                                      │
-│  ┌──────────────────────────┐                                │
-│  │     NavigationMLP        │  giriş : bbox(4) + ee_pos(3)  │
-│  │  7 → 256 → 256 → 256→15  │  çıkış : 5 × EE waypoint     │
-│  └────────────┬─────────────┘                                │
+│  ┌──────────────────────────────────────┐                    │
+│  │     NavigationMLP(horizon=H)         │                    │
+│  │  7 → 256 → 256 → 256 → (3*H)         │                    │
+│  │  giriş : bbox(4) + ee_pos(3)         │                    │
+│  │  çıkış : H × EE delta                │                    │
+│  └────────────┬─────────────────────────┘                    │
 │               │                                              │
 │               ▼                                              │
-│   waypoint'leri sırayla uygula → temas kontrolü             │
-│   temas varsa → BAŞARILI                                     │
-│   5 adım sonra → VLM'i tekrar sorgula                       │
+│   H delta'sı sırayla uygula → temas/distance kontrolü        │
+│   başarılı → BAŞARILI                                        │
+│   H adım sonra → VLM'i tekrar sorgula (H adım = 1 query)     │
 └──────────────────────────────────────────────────────────────┘
 ```
 

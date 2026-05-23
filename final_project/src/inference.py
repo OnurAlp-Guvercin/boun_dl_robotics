@@ -54,6 +54,7 @@ DEFAULT_N_OBJ_MAX   = 4
 DEFAULT_SEED        = 100
 DEFAULT_RENDER_MODE = "offscreen"
 DEFAULT_DEVICE      = "auto"
+DEFAULT_HORIZON     = 1
 
 
 def _save_episode_frames(
@@ -159,14 +160,14 @@ def run_episode(
     vlm_client    = None,
     use_gt_bbox:  bool = False,
     action_scale: np.ndarray | None = None,
+    horizon:      int = 1,
 ) -> dict:
     """
-    Run one reaching episode.
+    Run one reaching episode with HORIZON-step predictions.
 
     Returns
     -------
     dict with keys: success, n_steps, final_ee_dist, trajectory
-      trajectory: list of dicts (image, ee_pos, bbox, predicted_poses)
     """
     model.eval()
     if action_scale is None:
@@ -176,8 +177,6 @@ def run_episode(
     success    = False
     trajectory = []
 
-    # Query the visual system once. The object is static in the top-down scene,
-    # so the bbox is a target descriptor rather than a per-action observation.
     ee_pos, _, image = env.state()
     if use_gt_bbox or vlm_client is None:
         fixed_bbox = compute_gt_bbox(env.model, env.data, target_name)
@@ -192,41 +191,52 @@ def run_episode(
     while steps_done < max_steps:
         ee_pos, _, image = env.state()
 
-        # ── predict one closed-loop delta action ──────────────────────────────
+        # ── predict HORIZON deltas ─────────────────────────────────────────────
         x_np  = bbox_to_input(fixed_bbox, ee_pos)
         x_t   = torch.from_numpy(x_np).unsqueeze(0).to(device)
 
         with torch.no_grad():
-            delta_norm = model.predict_delta_norm(x_t).squeeze(0).cpu().numpy()  # (3,)
+            delta_norm_flat = model.predict_delta_norm(x_t).squeeze(0).cpu().numpy()  # (3*HORIZON,)
 
-        predicted_delta = delta_norm * action_scale
-        predicted_pose = ee_pos + predicted_delta
+        # Reshape to (HORIZON, 3)
+        delta_norm = delta_norm_flat.reshape(horizon, 3)
 
+        # Apply HORIZON deltas sequentially
+        predicted_poses = []
         step_images = [image]
 
-        # ── execute one waypoint ──────────────────────────────────────────────
-        env.move_ee_to_pose(predicted_pose)
-        steps_done += 1
-        ee_pos, _, step_img = env.state()
-        step_images.append(step_img)
+        for h in range(horizon):
+            if steps_done >= max_steps:
+                break
 
-        # Check contact OR distance-based success
-        if env.check_contact(target_name):
-            success = True
-        else:
-            obj_pos = env.get_object_pos(target_name)
-            dist_to_obj = float(np.linalg.norm(ee_pos[:2] - obj_pos[:2]))
-            if dist_to_obj < 0.05:
+            predicted_delta = delta_norm[h] * action_scale
+            predicted_pose = ee_pos + predicted_delta
+
+            env.move_ee_to_pose(predicted_pose)
+            steps_done += 1
+            ee_pos, _, step_img = env.state()
+            step_images.append(step_img)
+            predicted_poses.append(predicted_pose.tolist())
+
+            # Check contact OR distance-based success
+            if env.check_contact(target_name):
                 success = True
+                break
+            else:
+                obj_pos = env.get_object_pos(target_name)
+                dist_to_obj = float(np.linalg.norm(ee_pos[:2] - obj_pos[:2]))
+                if dist_to_obj < 0.05:
+                    success = True
+                    break
 
         traj_step = {
             "ee_pos":               ee_pos.tolist(),
             "bbox":                 fixed_bbox.tolist(),
             "bbox_source":          bbox_source,
-            "predicted_delta":      predicted_delta.tolist(),
-            "predicted_poses":      [predicted_pose.tolist()],
+            "predicted_delta":      delta_norm[0].tolist(),  # first delta for logging
+            "predicted_poses":      predicted_poses,
             "step_images":          step_images,
-            "n_steps_this_block":   1,
+            "n_steps_this_block":   len(predicted_poses),
         }
         trajectory.append(traj_step)
 
@@ -262,16 +272,19 @@ def evaluate(
     device:      str   = DEFAULT_DEVICE,
     out_dir:     str   = "",
     save_vis:    bool  = False,
+    horizon:     int   = DEFAULT_HORIZON,
 ) -> dict:
     dev = resolve_device(device)
 
     # ── load model ────────────────────────────────────────────────────────────
     ckpt  = torch.load(checkpoint, map_location=dev)
-    model = NavigationMLP().to(dev)
+    # Load horizon from checkpoint if available, otherwise use parameter
+    horizon = ckpt.get("horizon", horizon)
+    model = NavigationMLP(horizon=horizon).to(dev)
     model.load_state_dict(ckpt["model_state"])
     model.eval()
     action_scale = np.array(ckpt.get("action_scale", ACTION_SCALE.cpu().numpy()), dtype=np.float32)
-    print(f"[eval] Loaded checkpoint: {checkpoint}  (epoch {ckpt.get('epoch','?')})")
+    print(f"[eval] Loaded checkpoint: {checkpoint}  (epoch {ckpt.get('epoch','?')}, horizon={horizon})")
 
     # ── VLM client ────────────────────────────────────────────────────────────
     vlm_client = None
@@ -316,6 +329,7 @@ def evaluate(
             vlm_client=vlm_client,
             use_gt_bbox=(vlm_client is None) or use_gt_bbox,
             action_scale=action_scale,
+            horizon=horizon,
         )
         ep_result["episode"] = ep
         ep_result["target_name"] = target
@@ -407,12 +421,83 @@ def main() -> None:
     p.add_argument("--render-mode", type=str,   default=DEFAULT_RENDER_MODE,
                    choices=["offscreen", "gui"])
     p.add_argument("--device",      type=str,   default=DEFAULT_DEVICE)
+    p.add_argument("--horizon",     type=int,   default=DEFAULT_HORIZON,
+                   help="Planning horizon (single value)")
+    p.add_argument("--horizons",    type=int,   nargs="+",
+                   help="Multiple horizons to test (overrides --horizon)")
     p.add_argument("--out-dir",     type=str,   default="",
                    help="Directory to save eval_results.json (optional)")
     p.add_argument("--save-vis",    action="store_true",
                    help="Save per-episode frame PNGs to out-dir/vis_episodes/")
     args = p.parse_args()
-    evaluate(**vars(args))
+
+    # If multiple horizons provided, loop through each
+    horizons = args.horizons if args.horizons else [args.horizon]
+
+    if len(horizons) > 1:
+        print(f"\n{'='*70}")
+        print(f"Running inference with multiple horizons: {horizons}")
+        print(f"{'='*70}\n")
+        results = {}
+
+        for h in horizons:
+            checkpoint = f"{args.checkpoint.replace('best.pt', f'..').replace('navigation', f'nav_h{h}')}best.pt"
+            # Construct path like: final_project/runs/nav_h{h}/best.pt
+            if "nav_h" not in args.checkpoint:
+                checkpoint = args.checkpoint.replace("navigation/best.pt", f"nav_h{h}/best.pt")
+            out_dir = f"{args.out_dir}/vis_h{h}" if args.out_dir else f"final_project/runs/vis_h{h}"
+
+            print(f"\n{'='*70}")
+            print(f"Inference HORIZON={h}")
+            print(f"{'='*70}\n")
+
+            eval_kwargs = {
+                "checkpoint": checkpoint,
+                "n_episodes": args.n_episodes,
+                "max_steps": args.max_steps,
+                "vlm_url": args.vlm_url,
+                "vlm_model": args.vlm_model,
+                "use_gt_bbox": args.use_gt_bbox,
+                "n_obj_min": args.n_obj_min,
+                "n_obj_max": args.n_obj_max,
+                "seed": args.seed,
+                "render_mode": args.render_mode,
+                "device": args.device,
+                "out_dir": out_dir,
+                "save_vis": args.save_vis,
+                "horizon": h,
+            }
+            summary = evaluate(**eval_kwargs)
+            results[h] = {
+                "success_rate": summary.get("success_rate"),
+                "mean_final_dist": summary.get("mean_final_dist"),
+                "mean_steps_success": summary.get("mean_steps_success"),
+            }
+
+        # Summary
+        print(f"\n{'='*70}")
+        print("INFERENCE SUMMARY")
+        print(f"{'='*70}")
+        print(f"{'Horizon':<10} {'Success%':<12} {'Mean Dist':<12} {'Mean Steps':<12}")
+        print("-" * 50)
+        for h in sorted(results.keys()):
+            res = results[h]
+            sr = res.get("success_rate", 0) * 100
+            md = res.get("mean_final_dist", 0)
+            ms = res.get("mean_steps_success", 0)
+            print(f"{h:<10} {sr:<12.1f} {md:<12.4f} {ms:<12.1f}")
+
+        # Save summary
+        summary_path = Path(args.out_dir).parent / "inference_summary.json" if args.out_dir else Path("final_project/runs/inference_summary.json")
+        with open(summary_path, "w") as f:
+            json.dump(results, f, indent=2)
+        print(f"\nSummary saved to {summary_path}\n")
+    else:
+        # Single horizon
+        eval_kwargs = vars(args)
+        eval_kwargs.pop("horizons", None)
+        eval_kwargs["horizon"] = horizons[0]
+        evaluate(**eval_kwargs)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,32 @@
+{
+  "1": {
+    "status": "success",
+    "checkpoint": "final_project/runs/nav_h1/best.pt",
+    "test_mse": 0.00014098454206958573,
+    "test_rmse": 0.011873691172907678
+  },
+  "2": {
+    "status": "success",
+    "checkpoint": "final_project/runs/nav_h2/best.pt",
+    "test_mse": 0.0001321921684172973,
+    "test_rmse": 0.011497485308418416
+  },
+  "3": {
+    "status": "success",
+    "checkpoint": "final_project/runs/nav_h3/best.pt",
+    "test_mse": 0.00012732327067169633,
+    "test_rmse": 0.011283761370735218
+  },
+  "4": {
+    "status": "success",
+    "checkpoint": "final_project/runs/nav_h4/best.pt",
+    "test_mse": 0.00011392863596881483,
+    "test_rmse": 0.010673735801902482
+  },
+  "5": {
+    "status": "success",
+    "checkpoint": "final_project/runs/nav_h5/best.pt",
+    "test_mse": 0.0001130465465511875,
+    "test_rmse": 0.010632334952924852
+  }
+}
