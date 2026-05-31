@@ -1,27 +1,3 @@
-"""
-Closed-loop inference and evaluation.
-
-Loop:
-  1. Query VLM (or GT bbox) once at episode start
-  2. Reuse that fixed bbox for the full episode
-  3. Run MLP from current EE position -> bounded EE delta
-  4. Execute one delta action, check contact, then replan cheaply with the MLP
-
-Usage
------
-  # With VLM
-  python final_project/src/inference.py \\
-    --checkpoint final_project/runs/navigation/best.pt \\
-    --n-episodes 50 \\
-    --vlm-url http://localhost:8000 \\
-    --vlm-model Qwen/Qwen2-VL-7B-Instruct
-
-  # GT bbox ablation (no VLM needed)
-  python final_project/src/inference.py \\
-    --checkpoint final_project/runs/navigation/best.pt \\
-    --n-episodes 50 \\
-    --use-gt-bbox
-"""
 from __future__ import annotations
 
 import argparse
@@ -33,6 +9,9 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import matplotlib
+# Use non-interactive backend to avoid Tkinter GUI calls from worker threads
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
 from tqdm import tqdm
@@ -41,7 +20,7 @@ _SRC = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SRC))
 
 from env     import MultiObjectEnv           # noqa: E402
-from model   import ACTION_SCALE, NavigationMLP  # noqa: E402
+from model   import NavigationMLP  # noqa: E402
 from utils   import compute_gt_bbox, bbox_to_input  # noqa: E402
 
 DEFAULT_CHECKPOINT  = "final_project/runs/navigation/best.pt"
@@ -54,7 +33,8 @@ DEFAULT_N_OBJ_MAX   = 4
 DEFAULT_SEED        = 100
 DEFAULT_RENDER_MODE = "offscreen"
 DEFAULT_DEVICE      = "auto"
-DEFAULT_HORIZON     = 1
+DEFAULT_HORIZONS    = [1]
+DEFAULT_MAX_DELTA   = 0.05
 
 
 def _save_episode_frames(
@@ -149,6 +129,16 @@ def resolve_device(arg: str) -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+def checkpoint_for_horizon(checkpoint: str, horizon: int) -> str:
+    """Resolve the checkpoint path for a horizon sweep."""
+    ckpt_path = Path(checkpoint)
+    if ckpt_path.parent.name.startswith("nav_h"):
+        return str(ckpt_path.parent.parent / f"nav_h{horizon}" / ckpt_path.name)
+    if ckpt_path.parent.name == "navigation":
+        return str(ckpt_path.parent.parent / f"nav_h{horizon}" / ckpt_path.name)
+    return checkpoint
+
+
 # ── single episode ────────────────────────────────────────────────────────────
 
 def run_episode(
@@ -159,8 +149,8 @@ def run_episode(
     max_steps:    int,
     vlm_client    = None,
     use_gt_bbox:  bool = False,
-    action_scale: np.ndarray | None = None,
     horizon:      int = 1,
+    max_delta:    float = DEFAULT_MAX_DELTA,
 ) -> dict:
     """
     Run one reaching episode with HORIZON-step predictions.
@@ -170,8 +160,6 @@ def run_episode(
     dict with keys: success, n_steps, final_ee_dist, trajectory
     """
     model.eval()
-    if action_scale is None:
-        action_scale = ACTION_SCALE.cpu().numpy()
 
     steps_done = 0
     success    = False
@@ -196,10 +184,10 @@ def run_episode(
         x_t   = torch.from_numpy(x_np).unsqueeze(0).to(device)
 
         with torch.no_grad():
-            delta_norm_flat = model.predict_delta_norm(x_t).squeeze(0).cpu().numpy()  # (3*HORIZON,)
+            delta_flat = model.predict_delta(x_t).squeeze(0).cpu().numpy()  # (3*HORIZON,)
 
         # Reshape to (HORIZON, 3)
-        delta_norm = delta_norm_flat.reshape(horizon, 3)
+        deltas = delta_flat.reshape(horizon, 3)
 
         # Apply HORIZON deltas sequentially
         predicted_poses = []
@@ -209,7 +197,9 @@ def run_episode(
             if steps_done >= max_steps:
                 break
 
-            predicted_delta = delta_norm[h] * action_scale
+            predicted_delta = deltas[h]
+            if max_delta > 0:
+                predicted_delta = np.clip(predicted_delta, -max_delta, max_delta)
             predicted_pose = ee_pos + predicted_delta
 
             env.move_ee_to_pose(predicted_pose)
@@ -219,7 +209,9 @@ def run_episode(
             predicted_poses.append(predicted_pose.tolist())
 
             # Check contact OR distance-based success
-            if env.check_contact(target_name):
+            # If contact is registered right now or occurred during intermediate
+            # mujoco steps inside move_ee_to_pose, count it as success.
+            if env.check_contact(target_name) or env.recent_contact_with_body(target_name):
                 success = True
                 break
             else:
@@ -233,7 +225,8 @@ def run_episode(
             "ee_pos":               ee_pos.tolist(),
             "bbox":                 fixed_bbox.tolist(),
             "bbox_source":          bbox_source,
-            "predicted_delta":      delta_norm[0].tolist(),  # first delta for logging
+            "predicted_delta":      np.clip(deltas[0], -max_delta, max_delta).tolist()
+                                      if max_delta > 0 else deltas[0].tolist(),
             "predicted_poses":      predicted_poses,
             "step_images":          step_images,
             "n_steps_this_block":   len(predicted_poses),
@@ -272,7 +265,8 @@ def evaluate(
     device:      str   = DEFAULT_DEVICE,
     out_dir:     str   = "",
     save_vis:    bool  = False,
-    horizon:     int   = DEFAULT_HORIZON,
+    horizon:     int   = 1,
+    max_delta:   float = DEFAULT_MAX_DELTA,
 ) -> dict:
     dev = resolve_device(device)
 
@@ -283,20 +277,19 @@ def evaluate(
     model = NavigationMLP(horizon=horizon).to(dev)
     model.load_state_dict(ckpt["model_state"])
     model.eval()
-    action_scale = np.array(ckpt.get("action_scale", ACTION_SCALE.cpu().numpy()), dtype=np.float32)
     print(f"[eval] Loaded checkpoint: {checkpoint}  (epoch {ckpt.get('epoch','?')}, horizon={horizon})")
 
-    # ── VLM client ────────────────────────────────────────────────────────────
-    vlm_client = None
+    # ── VLM availability check ────────────────────────────────────────────────
+    use_vlm = False
     if not use_gt_bbox:
         try:
             from vlm_client import VLMClient   # noqa: E402
-            vlm_client = VLMClient(base_url=vlm_url, model_name=vlm_model)
-            if vlm_client.is_available():
+            probe_client = VLMClient(base_url=vlm_url, model_name=vlm_model)
+            if probe_client.is_available():
                 print(f"[eval] VLM server available at {vlm_url}")
+                use_vlm = True
             else:
                 print("[eval] VLM server not reachable → falling back to GT bboxes")
-                vlm_client = None
         except Exception as e:
             print(f"[eval] VLM init failed ({e}) → falling back to GT bboxes")
 
@@ -318,7 +311,13 @@ def evaluate(
         env.reset()
 
         obj_names = env.get_object_names()
-        target = obj_names[int(np.random.randint(len(obj_names)))]
+        rng = np.random.default_rng(seed + ep * 997)
+        target = obj_names[int(rng.integers(len(obj_names)))]
+
+        vlm_client = None
+        if use_vlm:
+            from vlm_client import VLMClient  # noqa: E402
+            vlm_client = VLMClient(base_url=vlm_url, model_name=vlm_model)
 
         ep_result = run_episode(
             env=env,
@@ -327,9 +326,9 @@ def evaluate(
             device=dev,
             max_steps=max_steps,
             vlm_client=vlm_client,
-            use_gt_bbox=(vlm_client is None) or use_gt_bbox,
-            action_scale=action_scale,
+            use_gt_bbox=(not use_vlm) or use_gt_bbox,
             horizon=horizon,
+            max_delta=max_delta,
         )
         ep_result["episode"] = ep
         ep_result["target_name"] = target
@@ -366,7 +365,8 @@ def evaluate(
                     "mean_final_dist":    float(np.mean(all_dists)),
                     "std_final_dist":     float(np.std(all_dists)),
                     "mean_steps_success": float(np.mean(succ_steps)) if succ_steps else None,
-                    "vlm_used":           (vlm_client is not None) and (not use_gt_bbox),
+                    "vlm_used":           use_vlm and (not use_gt_bbox),
+                    "max_delta":          max_delta,
                 }
                 with open(out_path, "w") as f:
                     json.dump({"summary": partial_summary, "episodes": results}, f, indent=2)
@@ -386,7 +386,8 @@ def evaluate(
         "mean_final_dist":    float(np.mean(all_dists)),
         "std_final_dist":     float(np.std(all_dists)),
         "mean_steps_success": float(np.mean(succ_steps)) if succ_steps else None,
-        "vlm_used":           (vlm_client is not None) and (not use_gt_bbox),
+        "vlm_used":           use_vlm and (not use_gt_bbox),
+        "max_delta":          max_delta,
     }
 
     print("\n── Evaluation Results ──────────────────────────────────────────")
@@ -421,18 +422,22 @@ def main() -> None:
     p.add_argument("--render-mode", type=str,   default=DEFAULT_RENDER_MODE,
                    choices=["offscreen", "gui"])
     p.add_argument("--device",      type=str,   default=DEFAULT_DEVICE)
-    p.add_argument("--horizon",     type=int,   default=DEFAULT_HORIZON,
-                   help="Planning horizon (single value)")
-    p.add_argument("--horizons",    type=int,   nargs="+",
-                   help="Multiple horizons to test (overrides --horizon)")
+    p.add_argument(
+        "--horizon",
+        type=int,
+        nargs="+",
+        default=DEFAULT_HORIZONS,
+        help="Planning horizon(s), e.g. --horizon 1 or --horizon 1 2 3 4 5",
+    )
     p.add_argument("--out-dir",     type=str,   default="",
                    help="Directory to save eval_results.json (optional)")
     p.add_argument("--save-vis",    action="store_true",
                    help="Save per-episode frame PNGs to out-dir/vis_episodes/")
+    p.add_argument("--max-delta",   type=float, default=DEFAULT_MAX_DELTA,
+                   help="Clip each predicted EE delta component in metres; use 0 to disable.")
     args = p.parse_args()
 
-    # If multiple horizons provided, loop through each
-    horizons = args.horizons if args.horizons else [args.horizon]
+    horizons = args.horizon
 
     if len(horizons) > 1:
         print(f"\n{'='*70}")
@@ -441,10 +446,7 @@ def main() -> None:
         results = {}
 
         for h in horizons:
-            checkpoint = f"{args.checkpoint.replace('best.pt', f'..').replace('navigation', f'nav_h{h}')}best.pt"
-            # Construct path like: final_project/runs/nav_h{h}/best.pt
-            if "nav_h" not in args.checkpoint:
-                checkpoint = args.checkpoint.replace("navigation/best.pt", f"nav_h{h}/best.pt")
+            checkpoint = checkpoint_for_horizon(args.checkpoint, h)
             out_dir = f"{args.out_dir}/vis_h{h}" if args.out_dir else f"final_project/runs/vis_h{h}"
 
             print(f"\n{'='*70}")
@@ -466,6 +468,7 @@ def main() -> None:
                 "out_dir": out_dir,
                 "save_vis": args.save_vis,
                 "horizon": h,
+                "max_delta": args.max_delta,
             }
             summary = evaluate(**eval_kwargs)
             results[h] = {
@@ -495,10 +498,8 @@ def main() -> None:
     else:
         # Single horizon
         eval_kwargs = vars(args)
-        eval_kwargs.pop("horizons", None)
         eval_kwargs["horizon"] = horizons[0]
         evaluate(**eval_kwargs)
-
 
 if __name__ == "__main__":
     main()

@@ -3,6 +3,7 @@ Shared utilities: camera projection, coordinate normalisation, bbox helpers.
 """
 import sys
 from pathlib import Path
+from typing import Optional
 
 _HW_SRC = Path(__file__).resolve().parent.parent.parent / "boun_dl_robotics" / "cmpe591.github.io" / "src"
 sys.path.insert(0, str(_HW_SRC))
@@ -39,7 +40,7 @@ def world_to_pixel(
     cam_name: str = "topdown",
     img_h: int = 128,
     img_w: int = 128,
-) -> tuple[float, float] | None:
+) -> Optional[tuple[float, float]]:
     """
     Project a 3-D world point to pixel (u, v) using the named MuJoCo camera.
 

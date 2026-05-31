@@ -1,27 +1,3 @@
-"""
-Visualisation utilities.
-
-Modes
------
-  trajectories  – Show image frames from N randomly sampled collected trajectories
-  training      – Plot training loss curves from train_metrics.json
-  eval-summary  – Success rate bar + step distribution from eval_results.json
-  episodes      – 2D top-down EE trajectory plots from eval_results.json
-
-Usage
------
-  python final_project/src/visualize.py --mode trajectories \\
-    --data-dir  final_project/data/trajectories \\
-    --n-samples 5 \\
-    --out-dir   final_project/runs/vis
-
-  python final_project/src/visualize.py --mode training \\
-    --run-dir final_project/runs/navigation
-
-  python final_project/src/visualize.py --mode eval-summary \\
-    --eval-json final_project/runs/vis/eval_results.json \\
-    --out-dir   final_project/runs/vis
-"""
 from __future__ import annotations
 
 import argparse
@@ -30,12 +6,15 @@ import math
 import random
 import sys
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import torch
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from matplotlib.patches import Rectangle
+import matplotlib.pyplot as plt  # pyright: ignore[reportMissingModuleSource]
+import matplotlib.patches as mpatches  # pyright: ignore[reportMissingModuleSource]
+from matplotlib.axes import Axes  # pyright: ignore[reportMissingModuleSource]
+from matplotlib.patches import Rectangle  # pyright: ignore[reportMissingModuleSource]
+from typing import cast
 
 _SRC = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SRC))
@@ -45,7 +24,7 @@ IMG_H = IMG_W = 128
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _load_trajectories(data_dir: Path, n: int | None = None) -> list[dict]:
+def _load_trajectories(data_dir: Path, n: Optional[int] = None) -> list[dict]:
     paths = sorted(data_dir.glob("traj_*.pt"))
     if n is not None:
         paths = random.sample(paths, min(n, len(paths)))
@@ -74,7 +53,7 @@ def vis_trajectories(
     data_dir:  Path,
     n_samples: int,
     n_frames:  int = 6,
-    out_dir:   Path | None = None,
+    out_dir:   Optional[Path] = None,
 ) -> None:
     """Show evenly spaced frames from N random successful trajectories."""
     paths = sorted(data_dir.glob("traj_*.pt"))
@@ -95,8 +74,7 @@ def vis_trajectories(
         idxs   = np.linspace(0, T - 1, min(n_frames, T), dtype=int)
 
         fig, axes = plt.subplots(1, len(idxs), figsize=(3 * len(idxs), 3.5))
-        if len(idxs) == 1:
-            axes = [axes]
+        axes_list = [cast(Axes, ax) for ax in np.atleast_1d(axes).ravel()]
 
         title_parts = [
             traj["target_name"],
@@ -105,7 +83,7 @@ def vis_trajectories(
         ]
         fig.suptitle(" | ".join(title_parts), fontsize=10)
 
-        for ax, t in zip(axes, idxs):
+        for ax, t in zip(axes_list, idxs):
             ax.imshow(_tensor_to_rgb(images[t]))
             _draw_bbox(ax, bboxes[t], color="lime")
             ax.set_title(f"step {t}", fontsize=8)
@@ -124,7 +102,7 @@ def vis_trajectories(
 
 # ── mode: training curves ─────────────────────────────────────────────────────
 
-def vis_training(run_dir: Path, out_dir: Path | None = None) -> None:
+def vis_training(run_dir: Path, out_dir: Optional[Path] = None) -> None:
     metrics_path = run_dir / "train_metrics.json"
     if not metrics_path.exists():
         print(f"[vis] {metrics_path} not found.")
@@ -140,11 +118,12 @@ def vis_training(run_dir: Path, out_dir: Path | None = None) -> None:
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4))
 
-    axes[0].plot(epochs, train_loss, label="train", linewidth=1.5)
-    axes[0].plot(epochs, val_mse,    label="val",   linewidth=1.5)
+    axes[0].plot(epochs, np.maximum(train_loss, 1e-12), label="train", linewidth=1.5)
+    axes[0].plot(epochs, np.maximum(val_mse, 1e-12),    label="val",   linewidth=1.5)
+    axes[0].set_yscale("log")
     axes[0].set_xlabel("Epoch")
-    axes[0].set_ylabel("Loss / MSE")
-    axes[0].set_title("Train SmoothL1 / Val MSE")
+    axes[0].set_ylabel("MSE (log scale)")
+    axes[0].set_title("Train / Val MSE")
     axes[0].legend()
     axes[0].grid(alpha=0.3)
 
@@ -175,7 +154,7 @@ def vis_training(run_dir: Path, out_dir: Path | None = None) -> None:
 def vis_episodes(
     eval_json: Path,
     n_samples: int,
-    out_dir:   Path | None = None,
+    out_dir:   Optional[Path] = None,
 ) -> None:
     """
     Plot per-episode EE trajectory + predicted waypoints from eval_results.json.
@@ -245,7 +224,7 @@ def vis_episodes(
 
 # ── mode: summary stats ───────────────────────────────────────────────────────
 
-def vis_eval_summary(eval_json: Path, out_dir: Path | None = None) -> None:
+def vis_eval_summary(eval_json: Path, out_dir: Optional[Path] = None) -> None:
     with open(eval_json) as f:
         data = json.load(f)
     summ = data["summary"]

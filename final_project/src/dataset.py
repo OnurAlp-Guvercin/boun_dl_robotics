@@ -98,9 +98,8 @@ def build_split_loaders(
     )
     print(f"[dataset] samples: train={n_train}, val={n_val}, test={n_test}")
 
-    kw = dict(batch_size=batch_size, num_workers=0)
     return (
-        DataLoader(train_ds, shuffle=True,  **kw),
-        DataLoader(val_ds,   shuffle=False, **kw),
-        DataLoader(test_ds,  shuffle=False, **kw),
+        DataLoader(train_ds, batch_size=batch_size, shuffle=True,  num_workers=0),
+        DataLoader(val_ds,   batch_size=batch_size, shuffle=False, num_workers=0),
+        DataLoader(test_ds,  batch_size=batch_size, shuffle=False, num_workers=0),
     )

@@ -1,0 +1,27 @@
+{
+  "1": {
+    "success_rate": 1.0,
+    "mean_final_dist": 0.06235524578421052,
+    "mean_steps_success": 31.19
+  },
+  "2": {
+    "success_rate": 1.0,
+    "mean_final_dist": 0.06003966964358295,
+    "mean_steps_success": 30.85
+  },
+  "3": {
+    "success_rate": 0.95,
+    "mean_final_dist": 0.07469924875703728,
+    "mean_steps_success": 32.2
+  },
+  "4": {
+    "success_rate": 0.79,
+    "mean_final_dist": 0.13571350393992795,
+    "mean_steps_success": 28.518987341772153
+  },
+  "5": {
+    "success_rate": 0.66,
+    "mean_final_dist": 0.19489443083051064,
+    "mean_steps_success": 24.166666666666668
+  }
+}

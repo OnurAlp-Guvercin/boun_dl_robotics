@@ -16,12 +16,10 @@ This repository contains implementations for all HW1 deliverables:
 
 ## Data Collection
 
+Aşağıdaki komutlar tek satırdır ve Windows'ta doğrudan çalışacak şekilde yazılmıştır.
+
 ```bash
-python boun_dl_robotics/cmpe591.github.io/src/hw1_mlp_position.py collect \
-  --num-samples 1250 \
-  --workers 1 \
-  --out-dir data/hw1 \
-  --seed 42
+python boun_dl_robotics/cmpe591.github.io/src/hw1_mlp_position.py collect --num-samples 1250 --workers 1 --out-dir data/hw1 --seed 42
 ```
 
 ## Train and Test Commands
@@ -29,40 +27,22 @@ python boun_dl_robotics/cmpe591.github.io/src/hw1_mlp_position.py collect \
 ### Deliverable 1 (MLP Position)
 
 ```bash
-python boun_dl_robotics/cmpe591.github.io/src/hw1_mlp_position.py train \
-  --data-path data/hw1 \
-  --run-dir runs/hw1/mlp_pos
-
-python boun_dl_robotics/cmpe591.github.io/src/hw1_mlp_position.py test \
-  --data-path data/hw1 \
-  --checkpoint-path runs/hw1/mlp_pos/best.pt \
-  --run-dir runs/hw1/mlp_pos
+python boun_dl_robotics/cmpe591.github.io/src/hw1_mlp_position.py train --data-path data/hw1 --run-dir runs/hw1/mlp_pos
+python boun_dl_robotics/cmpe591.github.io/src/hw1_mlp_position.py test --data-path data/hw1 --checkpoint-path runs/hw1/mlp_pos/best.pt --run-dir runs/hw1/mlp_pos
 ```
 
 ### Deliverable 2 (CNN Position)
 
 ```bash
-python boun_dl_robotics/cmpe591.github.io/src/hw1_cnn_position.py train \
-  --data-path data/hw1 \
-  --run-dir runs/hw1/cnn_pos
-
-python boun_dl_robotics/cmpe591.github.io/src/hw1_cnn_position.py test \
-  --data-path data/hw1 \
-  --checkpoint-path runs/hw1/cnn_pos/best.pt \
-  --run-dir runs/hw1/cnn_pos
+python boun_dl_robotics/cmpe591.github.io/src/hw1_cnn_position.py train --data-path data/hw1 --run-dir runs/hw1/cnn_pos
+python boun_dl_robotics/cmpe591.github.io/src/hw1_cnn_position.py test --data-path data/hw1 --checkpoint-path runs/hw1/cnn_pos/best.pt --run-dir runs/hw1/cnn_pos
 ```
 
 ### Deliverable 3 (Image Reconstruction)
 
 ```bash
-python boun_dl_robotics/cmpe591.github.io/src/hw1_reconstruction.py train \
-  --data-path data/hw1 \
-  --run-dir runs/hw1/reconstruction
-
-python boun_dl_robotics/cmpe591.github.io/src/hw1_reconstruction.py test \
-  --data-path data/hw1 \
-  --checkpoint-path runs/hw1/reconstruction/best.pt \
-  --run-dir runs/hw1/reconstruction
+python boun_dl_robotics/cmpe591.github.io/src/hw1_reconstruction.py train --data-path data/hw1 --run-dir runs/hw1/reconstruction
+python boun_dl_robotics/cmpe591.github.io/src/hw1_reconstruction.py test --data-path data/hw1 --checkpoint-path runs/hw1/reconstruction/best.pt --run-dir runs/hw1/reconstruction
 ```
 
 ## Results Report
@@ -131,29 +111,20 @@ By default, training uses `high_level_state` and supports optional pixel-state t
 ## HW2 Train
 
 ```bash
-python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py train \
-  --state-mode high_level
+python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py train --state-mode high_level
 ```
 
 Example run directories used in this report:
 
 ```bash
-python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py train \
-  --state-mode high_level \
-  --run-dir runs/hw2/dqn_1
-
-python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py train \
-  --state-mode high_level \
-  --run-dir runs/hw2/dqn_2
+python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py train --state-mode high_level --run-dir runs/hw2/dqn_1
+python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py train --state-mode high_level --run-dir runs/hw2/dqn_2
 ```
 
 ## HW2 Test
 
 ```bash
-python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py test \
-  --state-mode high_level \
-  --checkpoint-path runs/hw2/dqn_2/best.pt \
-  --run-dir runs/hw2/dqn_2
+python boun_dl_robotics/cmpe591.github.io/src/hw2_dqn.py test --state-mode high_level --checkpoint-path runs/hw2/dqn_2/best.pt --run-dir runs/hw2/dqn_2
 ```
 
 ## HW2 Outputs
@@ -230,9 +201,7 @@ The script implements a conditional neural movement primitive for learning from 
 Run from the project root:
 
 ```bash
-python boun_dl_robotics/cmpe591.github.io/src/hw4_cnmp.py collect \
-  --num-trajectories 200 \
-  --steps 100
+python boun_dl_robotics/cmpe591.github.io/src/hw4_cnmp.py collect --num-trajectories 200 --steps 100
 ```
 
 Collected data is stored under:
@@ -248,8 +217,7 @@ The final dataset contains 200 trajectories split as 160 train, 20 validation, a
 ## HW4 Train
 
 ```bash
-python boun_dl_robotics/cmpe591.github.io/src/hw4_cnmp.py train \
-  --epochs 500
+python boun_dl_robotics/cmpe591.github.io/src/hw4_cnmp.py train --epochs 500
 ```
 
 Training artifacts:
@@ -274,8 +242,7 @@ The validation loss decreases strongly during training and remains better than t
 ## HW4 Test
 
 ```bash
-python boun_dl_robotics/cmpe591.github.io/src/hw4_cnmp.py test \
-  --n-tests 200
+python boun_dl_robotics/cmpe591.github.io/src/hw4_cnmp.py test --n-tests 200
 ```
 
 Test artifacts:

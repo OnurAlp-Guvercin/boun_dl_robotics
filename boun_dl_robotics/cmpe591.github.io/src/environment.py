@@ -115,6 +115,8 @@ class BaseEnv:
         self.data.ctrl[4] = -np.pi/2
         mujoco.mj_step(self.model, self.data, nstep=2000)
         self._t = 0
+        # recent contact pairs (frozenset of geom ids) collected between calls to reset
+        self._recent_contacts: set[frozenset] = set()
 
     def _create_scene(self):
         return create_tabletop_scene()
@@ -123,6 +125,21 @@ class BaseEnv:
         mujoco.mj_step(self.model, self.data)
         if self._render_mode == "gui":
             self.viewer.render()
+        # Record recent contacts (geom id pairs) so higher-level logic can query
+        try:
+            for c_idx in range(int(self.data.ncon)):
+                g1 = int(self.data.contact[c_idx].geom1)
+                g2 = int(self.data.contact[c_idx].geom2)
+                self._recent_contacts.add(frozenset((g1, g2)))
+        except Exception:
+            # If data.contact isn't available yet or other issue, skip
+            pass
+
+    def pop_recent_contacts(self) -> set:
+        """Return and clear the set of recent contact geom-id pairs."""
+        pairs = set(self._recent_contacts)
+        self._recent_contacts.clear()
+        return pairs
 
     def _get_joint_position(self):
         position = np.zeros(self._n_joints)

@@ -1,5 +1,5 @@
 """
-Training: behaviour cloning with SmoothL1 loss on normalised EE delta actions.
+Training: behaviour cloning with MSE loss on normalised EE delta actions.
 
 Usage
 -----
@@ -10,8 +10,8 @@ Usage
 import argparse
 import json
 import math
+import random
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Optional
 
@@ -21,12 +21,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt  # pyright: ignore[reportMissingModuleSource]
 
 _SRC = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SRC))
 
-from model   import ACTION_SCALE, NavigationMLP  # noqa: E402
+from model   import NavigationMLP  # noqa: E402
 from utils   import bbox_to_input                # noqa: E402
 
 # ── defaults ──────────────────────────────────────────────────────────────────
@@ -42,12 +42,7 @@ DEFAULT_VAL_RATIO   = 0.1
 DEFAULT_TEST_RATIO  = 0.1
 DEFAULT_SEED        = 42
 DEFAULT_DEVICE      = "auto"
-DEFAULT_USE_GT_BBOX = False   # train with VLM bboxes to match inference distribution
-DEFAULT_VLM_URL     = "http://localhost:8000"
-DEFAULT_VLM_MODEL   = "Qwen3"
-DEFAULT_VLM_WORKERS = 8
-DEFAULT_HORIZON     = 1
-ACTION_SCALE_NP     = ACTION_SCALE.numpy()
+DEFAULT_HORIZONS    = [1]
 
 
 def _load_traj_paths(data_dir: Path) -> list[Path]:
@@ -60,94 +55,20 @@ def _target_stratum(target_name: str) -> str:
     return "_".join(parts[:2]) if len(parts) >= 2 else target_name
 
 
-def _cache_bbox_for_path(cache: dict, path_name: str) -> Optional[np.ndarray]:
-    """Return one cached bbox for a trajectory, supporting old per-frame caches."""
-    if path_name not in cache:
-        return None
-
-    bbox = cache[path_name]
-    if isinstance(bbox, torch.Tensor):
-        arr = bbox.detach().cpu().numpy()
-    else:
-        arr = np.asarray(bbox, dtype=np.float32)
-
-    if arr.ndim == 2:
-        arr = arr[0]
-    if arr.shape != (4,):
-        return None
-    return arr.astype(np.float32)
-
-
-def preprocess_vlm_bboxes(
-    data_dir: str,
-    vlm_url: str = DEFAULT_VLM_URL,
-    vlm_model: str = DEFAULT_VLM_MODEL,
-    n_workers: int = DEFAULT_VLM_WORKERS,
-) -> None:
-    """
-    Query VLM once per successful trajectory and cache the initial bbox.
-
-    Saves data_dir/vlm_bboxes.pt as {traj_filename: Tensor[4]}. Existing cache
-    entries are reused, including old Tensor[T,4] caches.
-    """
-    from vlm_client import VLMClient  # noqa: E402
-
-    out_dir = Path(data_dir)
-    client = VLMClient(base_url=vlm_url, model_name=vlm_model)
-
-    if not client.is_available():
-        print(f"[WARNING] VLM server at {vlm_url} not reachable.")
-        return
-
-    cache_path = out_dir / "vlm_bboxes.pt"
-    cache: dict = torch.load(cache_path, map_location="cpu") if cache_path.exists() else {}
-
-    to_process: list[Path] = []
-    for path in _load_traj_paths(out_dir):
-        if _cache_bbox_for_path(cache, path.name) is not None:
-            continue
-        traj = torch.load(path, map_location="cpu")
-        if traj.get("success", False):
-            to_process.append(path)
-
-    n_ok = 0
-
-    def _query(path: Path) -> tuple[str, torch.Tensor, bool]:
-        traj = torch.load(path, map_location="cpu")
-        bbox = client.get_bbox(traj["images"][0], traj["target_name"])
-        if bbox is None:
-            return path.name, traj["gt_bboxes"][0].float(), False
-        return path.name, torch.from_numpy(bbox).float(), True
-
-    with ThreadPoolExecutor(max_workers=n_workers) as pool:
-        futures = {pool.submit(_query, path): path for path in to_process}
-        for fut in tqdm(as_completed(futures), total=len(futures), desc="preprocess-vlm"):
-            name, bbox_t, ok = fut.result()
-            cache[name] = bbox_t
-            n_ok += int(ok)
-            torch.save(cache, cache_path)
-
-    print(f"VLM bbox cache saved -> {cache_path}")
-    print(f"  Trajectories: {len(to_process)}, VLM OK: {n_ok} ({n_ok/max(len(to_process),1)*100:.1f}%)")
-
-
 class TrajectoryDataset(Dataset):
     """
     Sliding multi-step samples:
       x: (7,) float32 = [fixed initial bbox(4), ee_norm(3)]
-      y: (3*HORIZON,) float32 = clipped EE deltas / ACTION_SCALE
+      y: (3*HORIZON,) float32 = raw EE deltas in metres
     """
 
     def __init__(
         self,
         data_dir: str,
         traj_paths: Optional[list[Path]] = None,
-        vlm_cache: Optional[dict] = None,
-        use_gt_bbox: bool = False,
         horizon: int = 1,
     ) -> None:
         self.samples: list[tuple[np.ndarray, np.ndarray]] = []
-        self.horizon = horizon
 
         data_path = Path(data_dir)
         paths = traj_paths if traj_paths is not None else _load_traj_paths(data_path)
@@ -164,16 +85,14 @@ class TrajectoryDataset(Dataset):
             if ee_positions.shape[0] < horizon + 1:
                 continue
 
-            cached_bbox = None if use_gt_bbox or not vlm_cache else _cache_bbox_for_path(vlm_cache, path.name)
-            fixed_bbox = gt_bboxes[0] if cached_bbox is None else cached_bbox
+            fixed_bbox = gt_bboxes[0]
 
             for t in range(ee_positions.shape[0] - horizon):
                 x = bbox_to_input(fixed_bbox, ee_positions[t])
                 # Extract horizon deltas and stack
                 deltas = []
                 for h in range(horizon):
-                    delta = (ee_positions[t + h + 1] - ee_positions[t + h]) / ACTION_SCALE_NP
-                    delta = np.clip(delta, -1.0, 1.0).astype(np.float32)
+                    delta = (ee_positions[t + h + 1] - ee_positions[t + h]).astype(np.float32)
                     deltas.append(delta)
                 y = np.concatenate(deltas, axis=0).astype(np.float32)
                 self.samples.append((x, y))
@@ -208,7 +127,7 @@ def _split_one_group(
     paths: list[Path],
     val_ratio: float,
     test_ratio: float,
-    rng: np.random.Generator,
+    rng: random.Random,
 ) -> tuple[list[Path], list[Path], list[Path]]:
     """Split one stratum while keeping at least one train trajectory when possible."""
     shuffled = list(paths)
@@ -255,7 +174,7 @@ def stratified_trajectory_split(
     if not groups:
         raise RuntimeError(f"No successful trajectories found in {data_path}")
 
-    rng = np.random.default_rng(seed)
+    rng = random.Random(seed)
     train_paths: list[Path] = []
     val_paths: list[Path] = []
     test_paths: list[Path] = []
@@ -284,19 +203,10 @@ def build_split_loaders(
     val_ratio: float = 0.1,
     test_ratio: float = 0.1,
     seed: int = 42,
-    use_gt_bbox: bool = False,
     horizon: int = 1,
 ) -> tuple[DataLoader, DataLoader, DataLoader]:
     """Load dataset, split, return (train, val, test) DataLoaders."""
-    data_path = Path(data_dir)
-    cache_path = data_path / "vlm_bboxes.pt"
-    vlm_cache = torch.load(cache_path, map_location="cpu") if cache_path.exists() else {}
-
-    if use_gt_bbox or not vlm_cache:
-        use_gt_bbox = True
-        print("[dataset] Using initial ground-truth bboxes.")
-    else:
-        print(f"[dataset] Using initial VLM bbox cache ({len(vlm_cache)} trajectories).")
+    print("[dataset] Using initial ground-truth bboxes.")
 
     train_paths, val_paths, test_paths, split_counts = stratified_trajectory_split(
         data_dir=data_dir,
@@ -305,13 +215,13 @@ def build_split_loaders(
         seed=seed,
     )
     train_ds = TrajectoryDataset(
-        data_dir, traj_paths=train_paths, vlm_cache=vlm_cache, use_gt_bbox=use_gt_bbox, horizon=horizon
+        data_dir, traj_paths=train_paths, horizon=horizon
     )
     val_ds = TrajectoryDataset(
-        data_dir, traj_paths=val_paths, vlm_cache=vlm_cache, use_gt_bbox=use_gt_bbox, horizon=horizon
+        data_dir, traj_paths=val_paths, horizon=horizon
     )
     test_ds = TrajectoryDataset(
-        data_dir, traj_paths=test_paths, vlm_cache=vlm_cache, use_gt_bbox=use_gt_bbox, horizon=horizon
+        data_dir, traj_paths=test_paths, horizon=horizon
     )
 
     print(
@@ -322,11 +232,10 @@ def build_split_loaders(
     print(f"[dataset] strata: {len(split_counts)} color/shape groups")
     print(f"[dataset] horizon: {horizon}")
 
-    kw = dict(batch_size=batch_size, num_workers=0)
     return (
-        DataLoader(train_ds, shuffle=True, **kw),
-        DataLoader(val_ds, shuffle=False, **kw),
-        DataLoader(test_ds, shuffle=False, **kw),
+        DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0),
+        DataLoader(val_ds, batch_size=batch_size,   shuffle=False, num_workers=0),
+        DataLoader(test_ds, batch_size=batch_size,  shuffle=False, num_workers=0),
     )
 
 
@@ -361,14 +270,15 @@ def evaluate(model, loader, device) -> dict[str, float]:
 
 def save_loss_plot(history: list[dict], out_dir: Path) -> None:
     epochs     = [h["epoch"] for h in history]
-    train_loss = [h.get("train_loss", h.get("train_mse")) for h in history]
+    train_loss = [float(h["train_loss"] if "train_loss" in h else h["train_mse"]) for h in history]
     val_mse    = [h["val_mse"]   for h in history]
 
     plt.figure(figsize=(8, 4))
-    plt.plot(epochs, train_loss, label="train_smooth_l1", linewidth=1.5)
-    plt.plot(epochs, val_mse,    label="val_mse",         linewidth=1.5)
+    plt.plot(epochs, np.maximum(train_loss, 1e-12), label="train_mse", linewidth=1.5)
+    plt.plot(epochs, np.maximum(val_mse, 1e-12),    label="val_mse",   linewidth=1.5)
+    plt.yscale("log")
     plt.xlabel("Epoch")
-    plt.ylabel("MSE")
+    plt.ylabel("MSE (log scale)")
     plt.title("Navigation MLP – Train / Val Loss")
     plt.legend()
     plt.grid(alpha=0.3)
@@ -390,8 +300,7 @@ def train(
     test_ratio:   float = DEFAULT_TEST_RATIO,
     seed:         int   = DEFAULT_SEED,
     device:       str   = DEFAULT_DEVICE,
-    use_gt_bbox:  bool  = DEFAULT_USE_GT_BBOX,
-    horizon:      int   = DEFAULT_HORIZON,
+    horizon:      int   = 1,
 ) -> dict:
     set_seeds(seed)
     dev     = resolve_device(device)
@@ -404,13 +313,12 @@ def train(
         val_ratio=val_ratio,
         test_ratio=test_ratio,
         seed=seed,
-        use_gt_bbox=use_gt_bbox,
         horizon=horizon,
     )
 
     model     = NavigationMLP(horizon=horizon).to(dev)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    loss_fn   = nn.SmoothL1Loss(beta=0.05)
+    loss_fn   = nn.MSELoss()
 
     # Warmup + cosine LR schedule
     warmup    = max(0, min(warmup_epochs, epochs - 1))
@@ -473,7 +381,6 @@ def train(
                 "epoch": epoch,
                 "horizon": horizon,
                 "policy_type": "residual_delta_mlp",
-                "action_scale": ACTION_SCALE_NP.tolist(),
             }, out_dir / "best.pt")
 
         scheduler.step()
@@ -494,9 +401,8 @@ def train(
         "test_rmse":    test_met["rmse"],
         "policy_type":  "residual_delta_mlp",
         "horizon":      horizon,
-        "action_scale": ACTION_SCALE_NP.tolist(),
-        "target":       "delta_ee / action_scale",
-        "loss":         "SmoothL1Loss(beta=0.05)",
+        "target":       "delta_ee_meters",
+        "loss":         "MSELoss",
         "history":      history,
     }
     with open(out_dir / "train_metrics.json", "w") as f:
@@ -511,42 +417,28 @@ def train(
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Train navigation MLP.")
-    p.add_argument("--data-dir",      type=str,   default=DEFAULT_DATA_DIR)
-    p.add_argument("--run-dir",       type=str,   default=DEFAULT_RUN_DIR)
-    p.add_argument("--epochs",        type=int,   default=DEFAULT_EPOCHS)
-    p.add_argument("--batch-size",    type=int,   default=DEFAULT_BATCH_SIZE)
-    p.add_argument("--lr",            type=float, default=DEFAULT_LR)
-    p.add_argument("--weight-decay",  type=float, default=DEFAULT_WEIGHT_DECAY)
-    p.add_argument("--grad-clip",     type=float, default=DEFAULT_GRAD_CLIP)
-    p.add_argument("--warmup-epochs", type=int,   default=DEFAULT_WARMUP)
-    p.add_argument("--val-ratio",     type=float, default=DEFAULT_VAL_RATIO)
-    p.add_argument("--test-ratio",    type=float, default=DEFAULT_TEST_RATIO)
-    p.add_argument("--seed",          type=int,   default=DEFAULT_SEED)
-    p.add_argument("--device",        type=str,   default=DEFAULT_DEVICE)
-    p.add_argument("--horizon",       type=int,   default=DEFAULT_HORIZON,
-                   help="Planning horizon (single value)")
-    p.add_argument("--horizons",      type=int,   nargs="+",
-                   help="Multiple horizons to train (overrides --horizon)")
-    p.add_argument("--use-gt-bbox",   action="store_true",
-                   help="Train with GT bboxes instead of VLM (ablation only)")
-    p.add_argument("--preprocess-vlm", action="store_true",
-                   help="Cache one initial VLM bbox per trajectory, then exit")
-    p.add_argument("--vlm-url",       type=str,   default=DEFAULT_VLM_URL)
-    p.add_argument("--vlm-model",     type=str,   default=DEFAULT_VLM_MODEL)
-    p.add_argument("--vlm-workers",   type=int,   default=DEFAULT_VLM_WORKERS)
+    p.add_argument("--data-dir",       type=str,            default=DEFAULT_DATA_DIR)
+    p.add_argument("--run-dir",        type=str,            default=DEFAULT_RUN_DIR)
+    p.add_argument("--epochs",         type=int,            default=DEFAULT_EPOCHS)
+    p.add_argument("--batch-size",     type=int,            default=DEFAULT_BATCH_SIZE)
+    p.add_argument("--lr",             type=float,          default=DEFAULT_LR)
+    p.add_argument("--weight-decay",   type=float,          default=DEFAULT_WEIGHT_DECAY)
+    p.add_argument("--grad-clip",      type=float,          default=DEFAULT_GRAD_CLIP)
+    p.add_argument("--warmup-epochs",  type=int,            default=DEFAULT_WARMUP)
+    p.add_argument("--val-ratio",      type=float,          default=DEFAULT_VAL_RATIO)
+    p.add_argument("--test-ratio",     type=float,          default=DEFAULT_TEST_RATIO)
+    p.add_argument("--seed",           type=int,            default=DEFAULT_SEED)
+    p.add_argument("--device",         type=str,            default=DEFAULT_DEVICE)
+    p.add_argument(
+        "--horizon",
+        type=int,
+        nargs="+",
+        default=DEFAULT_HORIZONS,
+        help="Planning horizon(s), e.g. --horizon 1 or --horizon 1 2 3 4 5",
+    )
     args = p.parse_args()
 
-    if args.preprocess_vlm:
-        preprocess_vlm_bboxes(
-            data_dir=args.data_dir,
-            vlm_url=args.vlm_url,
-            vlm_model=args.vlm_model,
-            n_workers=args.vlm_workers,
-        )
-        return
-
-    # If multiple horizons provided, loop through each
-    horizons = args.horizons if args.horizons else [args.horizon]
+    horizons = args.horizon
 
     if len(horizons) > 1:
         print(f"\n{'='*70}")
@@ -573,7 +465,6 @@ def main() -> None:
                 "test_ratio": args.test_ratio,
                 "seed": args.seed,
                 "device": args.device,
-                "use_gt_bbox": args.use_gt_bbox,
                 "horizon": h,
             }
             metrics = train(**train_kwargs)
@@ -603,8 +494,6 @@ def main() -> None:
     else:
         # Single horizon
         train_kwargs = vars(args)
-        for key in ("preprocess_vlm", "vlm_url", "vlm_model", "vlm_workers", "horizons"):
-            train_kwargs.pop(key, None)
         train_kwargs["horizon"] = horizons[0]
         train(**train_kwargs)
 

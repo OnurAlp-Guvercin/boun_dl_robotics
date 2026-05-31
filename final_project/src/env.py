@@ -8,9 +8,14 @@ import os
 import sys
 import ctypes.util
 from pathlib import Path
+from typing import Any, Optional, cast
 
 # Set MUJOCO_GL before mujoco is imported (it reads the env var at import time).
-if "MUJOCO_GL" not in os.environ:
+if os.name == "nt":
+    # Windows cannot use egl here; force a safe backend even if the shell
+    # inherited an incompatible MUJOCO_GL value.
+    os.environ["MUJOCO_GL"] = "glfw"
+elif "MUJOCO_GL" not in os.environ:
     _has_display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
     if not _has_display:
         os.environ["MUJOCO_GL"] = "egl" if ctypes.util.find_library("EGL") else "osmesa"
@@ -21,7 +26,7 @@ sys.path.insert(0, str(_HW_SRC))
 
 import numpy as np
 import torch
-import torchvision.transforms as T
+import torchvision.transforms.functional as TF
 import mujoco
 
 from environment import BaseEnv, create_tabletop_scene, create_object  # noqa: E402
@@ -57,7 +62,7 @@ class MultiObjectEnv(BaseEnv):
     def __init__(
         self,
         n_objects_range: tuple[int, int] = (2, 4),
-        seed: int | None = None,
+        seed: Optional[int] = None,
         **kwargs,
     ) -> None:
         # Must be set BEFORE super().__init__ because reset() is called there.
@@ -68,7 +73,7 @@ class MultiObjectEnv(BaseEnv):
 
     # ── Scene creation ────────────────────────────────────────────────────────
 
-    def _create_scene(self, seed: int | None = None):
+    def _create_scene(self, seed: Optional[int] = None):
         rng_seed = seed if seed is not None else self._object_seed
         if rng_seed is not None:
             np.random.seed(rng_seed)
@@ -136,15 +141,17 @@ class MultiObjectEnv(BaseEnv):
         """
         ee_pos       = self.data.site(self._ee_site).xpos.astype(np.float32).copy()
         joint_angles = self._get_joint_position().astype(np.float32)
+        viewer = cast(Any, self.viewer)
 
         if self._render_mode == "offscreen":
-            self.viewer.update_scene(self.data, camera="topdown")
-            pixels = torch.tensor(self.viewer.render().copy(), dtype=torch.uint8).permute(2, 0, 1)
+            viewer.update_scene(self.data, camera="topdown")
+            pixels = torch.tensor(viewer.render().copy(), dtype=torch.uint8).permute(2, 0, 1)
         else:
-            pixels = self.viewer.read_pixels(camid=1).copy()
+            pixels = viewer.read_pixels(camid=1)[0].copy()
             pixels = torch.tensor(pixels, dtype=torch.uint8).permute(2, 0, 1)
-            pixels = T.functional.center_crop(pixels, min(pixels.shape[1:]))
-            pixels = T.functional.resize(pixels, (IMG_H, IMG_W))
+            crop_size = min(pixels.shape[1:])
+            pixels = TF.center_crop(pixels, [crop_size, crop_size])
+            pixels = TF.resize(pixels, [IMG_H, IMG_W])
 
         return ee_pos, joint_angles, pixels
 
@@ -210,6 +217,30 @@ class MultiObjectEnv(BaseEnv):
             g2 = int(self.data.contact[c_idx].geom2)
             if (g1 in self._robot_geom_ids and g2 in target_geom_ids) or \
                (g2 in self._robot_geom_ids and g1 in target_geom_ids):
+                return True
+        return False
+
+    def recent_contact_with_body(self, body_name: str) -> bool:
+        """Return True if any recent contact involved the robot and the given body.
+
+        This looks at contact pairs recorded by BaseEnv.pop_recent_contacts() and
+        tests whether any pair contains one robot geom and one geom belonging to
+        the named body.
+        """
+        # Ensure robot geom ids are cached
+        if not hasattr(self, "_robot_geom_ids"):
+            self._robot_geom_ids = self._get_robot_geom_ids()
+
+        target_geom_ids = self._get_body_geom_ids(body_name)
+
+        # pop recent contacts (non-destructive check would be fine too, but we
+        # use pop to avoid repeated detection of the same contact)
+        if not hasattr(self, "pop_recent_contacts"):
+            return False
+        pairs = self.pop_recent_contacts()
+        for pair in pairs:
+            ids = set(pair)
+            if (ids & self._robot_geom_ids) and (ids & target_geom_ids):
                 return True
         return False
 

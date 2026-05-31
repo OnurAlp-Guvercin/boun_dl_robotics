@@ -1,21 +1,3 @@
-"""
-Data collection: generate reaching trajectories for every object in every scene.
-
-Each saved trajectory (*.pt) contains:
-  target_name  : str
-  success      : bool
-  scene_id     : int
-  n_steps      : int
-  images       : (T, 3, 128, 128) uint8
-  ee_positions : (T, 3)          float32  – world frame
-  gt_bboxes    : (T, 4)          float32  – (cx,cy,w,h) normalised [0,1]
-  obj_positions: (T, 3)          float32  – live object position at each step
-
-Usage
------
-  python final_project/src/collect.py --n-scenes 100 --n-workers 4 \
-    --out-dir final_project/data/trajectories
-"""
 import argparse
 import ctypes.util
 import json
@@ -23,6 +5,7 @@ import multiprocessing as mp
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import torch
@@ -47,7 +30,7 @@ DEFAULT_RENDER_MODE = "offscreen"
 DEFAULT_N_WORKERS   = 64
 
 # ── worker-process globals (set once per worker via initializer) ───────────────
-_worker_env = None
+_worker_env: Optional[MultiObjectEnv] = None
 _worker_cfg: dict = {}
 
 
@@ -84,6 +67,7 @@ def _run_scene(scene_id: int) -> list[dict]:
 
     cfg = _worker_cfg
     env = _worker_env
+    assert env is not None
     env._object_seed = cfg["seed"] + scene_id * 1000
     env.reset()
     return collect_scene(
@@ -218,9 +202,6 @@ def collect(
 
     all_results: list[dict] = []
 
-    meta_kw = dict(n_scenes=n_scenes, max_steps=max_steps, step_size=step_size,
-                   n_obj_min=n_obj_min, n_obj_max=n_obj_max, seed=seed)
-
     if n_workers <= 1:
         # ── single process ────────────────────────────────────────────────────
         env = MultiObjectEnv(
@@ -234,7 +215,16 @@ def collect(
             all_results.extend(
                 collect_scene(env, scene_id, max_steps, step_size, out, verbose)
             )
-            _save_meta(out, all_results, **meta_kw)
+            _save_meta(
+                out,
+                all_results,
+                n_scenes=n_scenes,
+                max_steps=max_steps,
+                step_size=step_size,
+                n_obj_min=n_obj_min,
+                n_obj_max=n_obj_max,
+                seed=seed,
+            )
     else:
         # ── multiprocessing ───────────────────────────────────────────────────
         worker_cfg = dict(
@@ -259,10 +249,28 @@ def collect(
                 desc="scenes",
             ):
                 all_results.extend(scene_results)
-                _save_meta(out, all_results, **meta_kw)
+                _save_meta(
+                    out,
+                    all_results,
+                    n_scenes=n_scenes,
+                    max_steps=max_steps,
+                    step_size=step_size,
+                    n_obj_min=n_obj_min,
+                    n_obj_max=n_obj_max,
+                    seed=seed,
+                )
 
         all_results.sort(key=lambda r: (r["scene_id"], r["target_name"]))
-        _save_meta(out, all_results, **meta_kw)  # final write with sorted order
+        _save_meta(
+            out,
+            all_results,
+            n_scenes=n_scenes,
+            max_steps=max_steps,
+            step_size=step_size,
+            n_obj_min=n_obj_min,
+            n_obj_max=n_obj_max,
+            seed=seed,
+        )  # final write with sorted order
 
     n_success = sum(1 for r in all_results if r["success"])
     rate = n_success / max(len(all_results), 1) * 100

@@ -1,21 +1,3 @@
-"""
-VLM client: queries a vLLM OpenAI-compatible endpoint for bounding boxes.
-
-Expected server: vLLM running a vision-language model (e.g. Qwen2-VL, LLaVA,
-InternVL) on port 8000 with OpenAI-compatible /v1/chat/completions endpoint.
-
-The model is prompted to return a JSON bbox: {"bbox": [x1, y1, x2, y2]}
-where x,y are Qwen-style coordinates in [0, 1000]. The parser converts this
-to a normalised (cx, cy, w, h) vector in [0, 1].
-
-If the VLM fails or returns unparseable output, the client returns None.
-
-Usage
------
-  client = VLMClient(base_url="http://localhost:8000", model_name="Qwen/Qwen2-VL-7B")
-  bbox = client.get_bbox(image_tensor, "red_box_0")
-  # bbox is np.array([cx, cy, w, h]) normalised, or None on failure
-"""
 import base64
 import json
 import re
