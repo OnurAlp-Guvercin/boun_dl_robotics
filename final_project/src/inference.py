@@ -139,7 +139,7 @@ def checkpoint_for_horizon(checkpoint: str, horizon: int) -> str:
     return checkpoint
 
 
-# ── single episode ────────────────────────────────────────────────────────────
+# -- single episode ------------------------------------------------------------
 
 def run_episode(
     env:          MultiObjectEnv,
@@ -179,7 +179,7 @@ def run_episode(
     while steps_done < max_steps:
         ee_pos, _, image = env.state()
 
-        # ── predict HORIZON deltas ─────────────────────────────────────────────
+        # -- predict HORIZON deltas ---------------------------------------------
         x_np  = bbox_to_input(fixed_bbox, ee_pos)
         x_t   = torch.from_numpy(x_np).unsqueeze(0).to(device)
 
@@ -249,7 +249,7 @@ def run_episode(
     }
 
 
-# ── full evaluation ───────────────────────────────────────────────────────────
+# -- full evaluation -----------------------------------------------------------
 
 def evaluate(
     checkpoint:  str,
@@ -270,7 +270,7 @@ def evaluate(
 ) -> dict:
     dev = resolve_device(device)
 
-    # ── load model ────────────────────────────────────────────────────────────
+    # -- load model ------------------------------------------------------------
     ckpt  = torch.load(checkpoint, map_location=dev)
     # Load horizon from checkpoint if available, otherwise use parameter
     horizon = ckpt.get("horizon", horizon)
@@ -279,7 +279,7 @@ def evaluate(
     model.eval()
     print(f"[eval] Loaded checkpoint: {checkpoint}  (epoch {ckpt.get('epoch','?')}, horizon={horizon})")
 
-    # ── VLM availability check ────────────────────────────────────────────────
+    # -- VLM availability check ------------------------------------------------
     use_vlm = False
     if not use_gt_bbox:
         try:
@@ -360,7 +360,7 @@ def evaluate(
             if ep_result["success"]:
                 n_success += 1
 
-            # ── save after every episode ──────────────────────────────────────
+            # -- save after every episode --------------------------------------
             if out_path:
                 all_dists  = [r["final_ee_dist"] for r in results]
                 succ_steps = [r["n_steps"] for r in results if r["success"]]
@@ -380,7 +380,7 @@ def evaluate(
     # Sort results by episode number
     results.sort(key=lambda r: r["episode"])
 
-    # ── final aggregate metrics ───────────────────────────────────────────────
+    # -- final aggregate metrics -----------------------------------------------
     success_rate = n_success / max(n_episodes, 1)
     all_dists    = [r["final_ee_dist"] for r in results]
     succ_steps   = [r["n_steps"] for r in results if r["success"]]
@@ -396,12 +396,12 @@ def evaluate(
         "max_delta":          max_delta,
     }
 
-    print("\n── Evaluation Results ──────────────────────────────────────────")
+    print("\n-- Evaluation Results ------------------------------------------")
     print(f"  Episodes       : {n_episodes}")
     print(f"  Success rate   : {success_rate*100:.1f}%  ({n_success}/{n_episodes})")
     print(f"  Mean final dist: {summary['mean_final_dist']:.4f} m")
     print(f"  Mean steps (success): {summary['mean_steps_success']}")
-    print("────────────────────────────────────────────────────────────────")
+    print("----------------------------------------------------------------")
 
     if out_path:
         with open(out_path, "w") as f:
@@ -411,7 +411,7 @@ def evaluate(
     return summary
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
+# -- CLI -----------------------------------------------------------------------
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Closed-loop inference + evaluation.")

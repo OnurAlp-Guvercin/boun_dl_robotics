@@ -11,14 +11,14 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-# ── path setup ────────────────────────────────────────────────────────────────
+# -- path setup ----------------------------------------------------------------
 _SRC = Path(__file__).resolve().parent
 sys.path.insert(0, str(_SRC))
 
 from env import MultiObjectEnv, EE_Z          # noqa: E402
 from utils import compute_gt_bbox             # noqa: E402
 
-# ── defaults ──────────────────────────────────────────────────────────────────
+# -- defaults ------------------------------------------------------------------
 DEFAULT_N_SCENES    = 100
 DEFAULT_OUT_DIR     = "final_project/data/trajectories"
 DEFAULT_MAX_STEPS   = 80
@@ -29,7 +29,7 @@ DEFAULT_SEED        = 42
 DEFAULT_RENDER_MODE = "offscreen"
 DEFAULT_N_WORKERS   = 64
 
-# ── worker-process globals (set once per worker via initializer) ───────────────
+# -- worker-process globals (set once per worker via initializer) ---------------
 _worker_env: Optional[MultiObjectEnv] = None
 _worker_cfg: dict = {}
 
@@ -80,7 +80,7 @@ def _run_scene(scene_id: int) -> list[dict]:
     )
 
 
-# ── single-scene collection ───────────────────────────────────────────────────
+# -- single-scene collection ---------------------------------------------------
 
 def collect_scene(
     env: MultiObjectEnv,
@@ -163,7 +163,7 @@ def collect_scene(
     return results
 
 
-# ── metadata helper ──────────────────────────────────────────────────────────
+# -- metadata helper ----------------------------------------------------------
 
 def _save_meta(out: Path, all_results: list[dict], n_scenes: int,
                max_steps: int, step_size: float,
@@ -183,7 +183,7 @@ def _save_meta(out: Path, all_results: list[dict], n_scenes: int,
         json.dump(meta, f, indent=2)
 
 
-# ── main collect ──────────────────────────────────────────────────────────────
+# -- main collect --------------------------------------------------------------
 
 def collect(
     n_scenes:    int   = DEFAULT_N_SCENES,
@@ -203,7 +203,7 @@ def collect(
     all_results: list[dict] = []
 
     if n_workers <= 1:
-        # ── single process ────────────────────────────────────────────────────
+        # -- single process ----------------------------------------------------
         env = MultiObjectEnv(
             n_objects_range=(n_obj_min, n_obj_max),
             seed=seed,
@@ -226,7 +226,7 @@ def collect(
                 seed=seed,
             )
     else:
-        # ── multiprocessing ───────────────────────────────────────────────────
+        # -- multiprocessing ---------------------------------------------------
         worker_cfg = dict(
             out_dir=str(out),
             max_steps=max_steps,
@@ -280,7 +280,7 @@ def collect(
     print(f"  Saved to        : {out}")
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
+# -- CLI -----------------------------------------------------------------------
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Collect reaching trajectories.")

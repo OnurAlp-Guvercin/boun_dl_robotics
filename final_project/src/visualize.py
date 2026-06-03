@@ -22,7 +22,7 @@ sys.path.insert(0, str(_SRC))
 IMG_H = IMG_W = 128
 
 
-# ── helpers ───────────────────────────────────────────────────────────────────
+# -- helpers -------------------------------------------------------------------
 
 def _load_trajectories(data_dir: Path, n: Optional[int] = None) -> list[dict]:
     paths = sorted(data_dir.glob("traj_*.pt"))
@@ -47,7 +47,7 @@ def _tensor_to_rgb(image: torch.Tensor) -> np.ndarray:
     return image.permute(1, 2, 0).numpy()
 
 
-# ── mode: trajectories ────────────────────────────────────────────────────────
+# -- mode: trajectories --------------------------------------------------------
 
 def vis_trajectories(
     data_dir:  Path,
@@ -100,7 +100,7 @@ def vis_trajectories(
     print(f"[vis] Trajectories plotted ({len(chosen)} trajectories).")
 
 
-# ── mode: training curves ─────────────────────────────────────────────────────
+# -- mode: training curves -----------------------------------------------------
 
 def vis_training(run_dir: Path, out_dir: Optional[Path] = None) -> None:
     metrics_path = run_dir / "train_metrics.json"
@@ -149,7 +149,7 @@ def vis_training(run_dir: Path, out_dir: Optional[Path] = None) -> None:
 
 
 
-# ── mode: episode trajectories (from eval JSON) ──────────────────────────────
+# -- mode: episode trajectories (from eval JSON) ------------------------------
 
 def vis_episodes(
     eval_json: Path,
@@ -222,7 +222,7 @@ def vis_episodes(
     print(f"[vis] Episode trajectories plotted ({len(chosen)} episodes).")
 
 
-# ── mode: summary stats ───────────────────────────────────────────────────────
+# -- mode: summary stats -------------------------------------------------------
 
 def vis_eval_summary(eval_json: Path, out_dir: Optional[Path] = None) -> None:
     with open(eval_json) as f:
@@ -268,7 +268,7 @@ def vis_eval_summary(eval_json: Path, out_dir: Optional[Path] = None) -> None:
         plt.show()
 
 
-# ── mode: horizon comparison ──────────────────────────────────────────────────
+# -- mode: horizon comparison --------------------------------------------------
 
 def vis_horizon_comparison(runs_dir: Path, out_dir: Optional[Path] = None) -> None:
     """Compare success rate, mean distance, and mean steps across horizons.
@@ -353,7 +353,7 @@ def vis_horizon_comparison(runs_dir: Path, out_dir: Optional[Path] = None) -> No
         plt.show()
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
+# -- CLI -----------------------------------------------------------------------
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Visualisation tool.")

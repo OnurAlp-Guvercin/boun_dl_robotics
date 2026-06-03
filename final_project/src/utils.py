@@ -11,7 +11,7 @@ sys.path.insert(0, str(_HW_SRC))
 import numpy as np
 import mujoco  # noqa: E402
 
-# ── EE workspace bounds (used for normalisation) ──────────────────────────────
+# -- EE workspace bounds (used for normalisation) ------------------------------
 EE_BOUNDS = np.array([
     [0.20, 1.00],   # x
     [-0.40, 0.40],  # y
@@ -31,7 +31,7 @@ def denormalise_ee(norm: np.ndarray) -> np.ndarray:
     return np.array(norm, dtype=np.float32) * (hi - lo) + lo
 
 
-# ── Camera projection ─────────────────────────────────────────────────────────
+# -- Camera projection ---------------------------------------------------------
 
 def world_to_pixel(
     model,

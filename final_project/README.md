@@ -136,33 +136,33 @@ python final_project/src/visualize.py --mode horizon-compare --run-dir final_pro
 
 ---
 
-**b) Başarı özeti:**
+**b) Success summary:**
 
 ```bash
 python final_project/src/visualize.py --mode eval-summary --eval-json final_project/runs/vis_h1/eval_results.json --out-dir final_project/runs/vis
 ```
 
-**Çıktı:** `runs/vis/eval_summary.png`
+**Output:** `runs/vis/eval_summary.png`
 
 ---
 
-**c) Eğitim eğrisi:**
+**c) Training curve:**
 
 ```bash
 python final_project/src/visualize.py --mode training --run-dir final_project/runs/nav_h1 --out-dir final_project/runs/vis
 ```
 
-**Çıktı:** `runs/vis/training_curves.png`
+**Output:** `runs/vis/training_curves.png`
 
 ---
 
-**d) Episode top-down trajektori:**
+**d) Episode top-down trajectory:**
 
 ```bash
 python final_project/src/visualize.py --mode episodes --eval-json final_project/runs/vis_h1/eval_results.json --n-samples 5 --out-dir final_project/runs/vis
 ```
 
-**Çıktı:** `runs/vis/ep000_traj.png`
+**Output:** `runs/vis/ep000_traj.png`
 
 ---
 

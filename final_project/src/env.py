@@ -31,7 +31,7 @@ import mujoco
 
 from environment import BaseEnv, create_tabletop_scene, create_object  # noqa: E402
 
-# ── Object catalogue ──────────────────────────────────────────────────────────
+# -- Object catalogue ----------------------------------------------------------
 SHAPES = ["box", "sphere"]
 COLORS: dict[str, list[float]] = {
     "red":    [0.90, 0.10, 0.10, 1.0],
@@ -43,7 +43,7 @@ COLORS: dict[str, list[float]] = {
 }
 COLOR_NAMES = list(COLORS.keys())
 
-# ── Table workspace ───────────────────────────────────────────────────────────
+# -- Table workspace -----------------------------------------------------------
 TABLE_X = (0.35, 0.75)
 TABLE_Y = (-0.25, 0.25)
 TABLE_Z = 1.10          # object spawn height
@@ -71,7 +71,7 @@ class MultiObjectEnv(BaseEnv):
         self._obj_info: list[dict] = []
         super().__init__(**kwargs)
 
-    # ── Scene creation ────────────────────────────────────────────────────────
+    # -- Scene creation --------------------------------------------------------
 
     def _create_scene(self, seed: Optional[int] = None):
         rng_seed = seed if seed is not None else self._object_seed
@@ -117,7 +117,7 @@ class MultiObjectEnv(BaseEnv):
 
         return scene
 
-    # ── Accessors ─────────────────────────────────────────────────────────────
+    # -- Accessors -------------------------------------------------------------
 
     def get_object_names(self) -> list[str]:
         return [o["name"] for o in self._obj_info]
@@ -129,7 +129,7 @@ class MultiObjectEnv(BaseEnv):
         """Current 3-D position of the object (live from MuJoCo data)."""
         return self.data.body(name).xpos.copy()
 
-    # ── State ─────────────────────────────────────────────────────────────────
+    # -- State -----------------------------------------------------------------
 
     def state(self) -> tuple[np.ndarray, np.ndarray, torch.Tensor]:
         """
@@ -155,7 +155,7 @@ class MultiObjectEnv(BaseEnv):
 
         return ee_pos, joint_angles, pixels
 
-    # ── Motion ────────────────────────────────────────────────────────────────
+    # -- Motion ----------------------------------------------------------------
 
     def move_ee_step(
         self,
@@ -202,7 +202,7 @@ class MultiObjectEnv(BaseEnv):
             threshold=0.05,
         )
 
-    # ── Contact detection ─────────────────────────────────────────────────────
+    # -- Contact detection -----------------------------------------------------
 
     def check_contact(self, target_name: str) -> bool:
         """True if any robot/gripper geom is in contact with *target_name*."""

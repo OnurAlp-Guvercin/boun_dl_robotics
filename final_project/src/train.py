@@ -29,7 +29,7 @@ sys.path.insert(0, str(_SRC))
 from model   import NavigationMLP  # noqa: E402
 from utils   import bbox_to_input                # noqa: E402
 
-# ── defaults ──────────────────────────────────────────────────────────────────
+# -- defaults ------------------------------------------------------------------
 DEFAULT_DATA_DIR    = "final_project/data/trajectories"
 DEFAULT_RUN_DIR     = "final_project/runs/navigation"
 DEFAULT_EPOCHS      = 200
@@ -385,14 +385,14 @@ def train(
 
         scheduler.step()
 
-    # ── final test evaluation ─────────────────────────────────────────────────
+    # -- final test evaluation -------------------------------------------------
     ckpt = torch.load(out_dir / "best.pt", map_location=dev)
     model.load_state_dict(ckpt["model_state"])
     test_met = evaluate(model, test_loader, dev)
     print(f"\n[train] Best val MSE = {best_val:.6f}  (epoch {ckpt['epoch']})")
     print(f"[train] Test  MSE = {test_met['mse']:.6f}  RMSE = {test_met['rmse']:.6f}")
 
-    # ── save artefacts ────────────────────────────────────────────────────────
+    # -- save artefacts --------------------------------------------------------
     metrics = {
         "best_val_mse": best_val,
         "best_epoch":   int(ckpt["epoch"]),
@@ -413,7 +413,7 @@ def train(
     return metrics
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
+# -- CLI -----------------------------------------------------------------------
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Train navigation MLP.")
