@@ -333,11 +333,9 @@ def evaluate(
         ep_result["episode"] = ep
         ep_result["target_name"] = target
 
-        if vis_dir is not None:
-            _save_episode_frames(ep_result, vis_dir)
-
-        for step_data in ep_result["trajectory"]:
-            step_data.pop("step_images", None)
+        # NOTE: do NOT call _save_episode_frames here — matplotlib is not
+        # thread-safe and will raise Done/renderer errors under ThreadPoolExecutor.
+        # Visualisation is handled in the main thread after fut.result().
 
         return ep_result
 
@@ -350,6 +348,14 @@ def evaluate(
 
         for fut in tqdm(as_completed(futures), total=n_episodes, desc="episodes"):
             ep_result = fut.result()
+
+            # Save visualisation in the main thread (matplotlib is not thread-safe)
+            if vis_dir is not None:
+                _save_episode_frames(ep_result, vis_dir)
+
+            for step_data in ep_result["trajectory"]:
+                step_data.pop("step_images", None)
+
             results.append(ep_result)
             if ep_result["success"]:
                 n_success += 1

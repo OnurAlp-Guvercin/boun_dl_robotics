@@ -268,12 +268,98 @@ def vis_eval_summary(eval_json: Path, out_dir: Optional[Path] = None) -> None:
         plt.show()
 
 
+# ── mode: horizon comparison ──────────────────────────────────────────────────
+
+def vis_horizon_comparison(runs_dir: Path, out_dir: Optional[Path] = None) -> None:
+    """Compare success rate, mean distance, and mean steps across horizons.
+
+    Looks for vis_h{N}/eval_results.json under runs_dir.
+    """
+    horizon_dirs = sorted(runs_dir.glob("vis_h*"), key=lambda p: int(p.name[5:]))
+    if not horizon_dirs:
+        print(f"[vis] No vis_h* directories found under {runs_dir}")
+        return
+
+    horizons, success_rates, mean_dists, mean_steps = [], [], [], []
+
+    for hdir in horizon_dirs:
+        json_path = hdir / "eval_results.json"
+        if not json_path.exists():
+            print(f"[vis] Skipping {hdir.name}: eval_results.json not found")
+            continue
+        with open(json_path) as f:
+            data = json.load(f)
+        s = data["summary"]
+        h = int(hdir.name[5:])
+        horizons.append(h)
+        success_rates.append(s["success_rate"] * 100)
+        mean_dists.append(s["mean_final_dist"])
+        succ_steps = s.get("mean_steps_success")
+        if succ_steps is None:
+            eps = data.get("episodes", [])
+            succ_eps = [e["n_steps"] for e in eps if e["success"]]
+            succ_steps = float(np.mean(succ_eps)) if succ_eps else 0.0
+        mean_steps.append(succ_steps)
+
+    if not horizons:
+        print("[vis] No valid horizon data found.")
+        return
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+    # Success rate
+    axes[0].plot(horizons, success_rates, "o-", color="steelblue", linewidth=2, markersize=7)
+    for h, v in zip(horizons, success_rates):
+        axes[0].annotate(f"{v:.1f}%", (h, v), textcoords="offset points",
+                         xytext=(0, 8), ha="center", fontsize=8)
+    axes[0].set_xlabel("Horizon")
+    axes[0].set_ylabel("Success Rate (%)")
+    axes[0].set_title("Success Rate vs Horizon")
+    axes[0].set_xticks(horizons)
+    axes[0].set_ylim(0, 105)
+    axes[0].grid(alpha=0.3)
+
+    # Mean final distance
+    axes[1].plot(horizons, mean_dists, "o-", color="tomato", linewidth=2, markersize=7)
+    for h, v in zip(horizons, mean_dists):
+        axes[1].annotate(f"{v:.3f}", (h, v), textcoords="offset points",
+                         xytext=(0, 8), ha="center", fontsize=8)
+    axes[1].set_xlabel("Horizon")
+    axes[1].set_ylabel("Mean Final Distance (m)")
+    axes[1].set_title("Mean Final EE Distance vs Horizon")
+    axes[1].set_xticks(horizons)
+    axes[1].grid(alpha=0.3)
+
+    # Mean steps (success only)
+    axes[2].plot(horizons, mean_steps, "o-", color="seagreen", linewidth=2, markersize=7)
+    for h, v in zip(horizons, mean_steps):
+        axes[2].annotate(f"{v:.1f}", (h, v), textcoords="offset points",
+                         xytext=(0, 8), ha="center", fontsize=8)
+    axes[2].set_xlabel("Horizon")
+    axes[2].set_ylabel("Mean Steps (success only)")
+    axes[2].set_title("Mean Steps vs Horizon")
+    axes[2].set_xticks(horizons)
+    axes[2].grid(alpha=0.3)
+
+    fig.suptitle(f"Horizon Comparison  |  horizons={horizons}", fontsize=12)
+    plt.tight_layout()
+
+    if out_dir is not None:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        plt.savefig(out_dir / "horizon_comparison.png", dpi=150)
+        plt.close()
+        print(f"[vis] Saved horizon comparison → {out_dir / 'horizon_comparison.png'}")
+    else:
+        plt.show()
+
+
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Visualisation tool.")
     p.add_argument("--mode", type=str, required=True,
-                   choices=["trajectories", "training", "eval-summary", "episodes"])
+                   choices=["trajectories", "training", "eval-summary", "episodes",
+                            "horizon-compare"])
     p.add_argument("--data-dir",   type=str, default="final_project/data/trajectories")
     p.add_argument("--run-dir",    type=str, default="final_project/runs/navigation")
     p.add_argument("--eval-json",  type=str, default="")
@@ -306,6 +392,9 @@ def main() -> None:
         if not args.eval_json:
             p.error("--eval-json required for episodes mode")
         vis_episodes(Path(args.eval_json), args.n_samples, out)
+
+    elif args.mode == "horizon-compare":
+        vis_horizon_comparison(Path(args.run_dir), out)
 
 
 if __name__ == "__main__":

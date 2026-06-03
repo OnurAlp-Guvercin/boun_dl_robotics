@@ -1,27 +1,27 @@
 {
   "1": {
-    "success_rate": 1.0,
-    "mean_final_dist": 0.06235524578421052,
-    "mean_steps_success": 31.19
+    "success_rate": 0.75,
+    "mean_final_dist": 0.23430514741836742,
+    "mean_steps_success": 23.626666666666665
   },
   "2": {
-    "success_rate": 1.0,
-    "mean_final_dist": 0.06003966964358295,
-    "mean_steps_success": 30.85
+    "success_rate": 0.73,
+    "mean_final_dist": 0.2064964538827656,
+    "mean_steps_success": 25.493150684931507
   },
   "3": {
-    "success_rate": 0.95,
-    "mean_final_dist": 0.07469924875703728,
-    "mean_steps_success": 32.2
+    "success_rate": 0.69,
+    "mean_final_dist": 0.14007565881554224,
+    "mean_steps_success": 29.231884057971016
   },
   "4": {
-    "success_rate": 0.79,
-    "mean_final_dist": 0.13571350393992795,
-    "mean_steps_success": 28.518987341772153
+    "success_rate": 0.78,
+    "mean_final_dist": 0.15854908998349573,
+    "mean_steps_success": 29.974358974358974
   },
   "5": {
-    "success_rate": 0.66,
-    "mean_final_dist": 0.19489443083051064,
-    "mean_steps_success": 24.166666666666668
+    "success_rate": 0.65,
+    "mean_final_dist": 0.20929669536634282,
+    "mean_steps_success": 36.753846153846155
   }
 }

@@ -1,199 +1,209 @@
 # Final Project – VLM-Guided Robot Reaching
 
-Robot kolu, kameradan aldığı görüntüyü VLM'e (Qwen3) gönderir. VLM hedef nesnenin bbox'ını döner. MLP bu bbox + mevcut ee_pos'tan sonraki 5 waypoint'i tahmin eder. Robot kolu bu waypoint'leri sırayla uygular, nesneye dokunursa başarılı sayılır.
+The robot arm sends the camera image to a VLM (Qwen3), which returns the target object's bounding box. An MLP predicts the next 5 waypoints from this bbox + current ee_pos. The robot arm executes these waypoints sequentially; a successful episode is one where the arm touches the object.
 
 ---
 
-## VLM Server Kurulumu
+## VLM Server Setup
 
-Inference öncesi vLLM sunucusunu başlat:
+Start the vLLM server before running inference:
 
 ```bash
 vllm serve /mnt/beegfs/LLM/onuralpguvercin/HAVL-RL-SWIFT/ZZ_trained_models/Qwen3-VL-4B-Instruct --served-model-name Qwen3 --tensor-parallel-size 8 --max-model-len 50000 --allowed-local-media-path /mnt --max-num-batched-tokens 150000 --max-num-seqs 50 --port 8000
 ```
 
-Sunucuyu durdurmak için:
+To stop the server:
 ```bash
 pkill -f "vllm serve"
 ```
 
-Veya terminal'de `Ctrl+C` basın.
+Or press `Ctrl+C` in the terminal.
 
 ---
 
-## Proje Yapısı
+## Project Structure
 
 ```
 final_project/
 ├── src/
-│   ├── env.py          – MuJoCo ortamı (rastgele nesneli sahneler)
-│   ├── utils.py        – Kamera projeksiyonu, EE normalizasyonu, bbox hesaplama
-│   ├── collect.py      – Veri toplama
+│   ├── env.py          – MuJoCo environment (scenes with random objects)
+│   ├── utils.py        – Camera projection, EE normalization, bbox computation
+│   ├── collect.py      – Data collection
 │   ├── model.py        – NavigationMLP (behaviour cloning, configurable horizon)
-│   ├── train.py        – Eğitim döngüsü (--horizon parameter)
-│   ├── vlm_client.py   – VLM HTTP istemcisi (vLLM / OpenAI uyumlu)
-│   ├── inference.py    – Kapalı döngü inference + değerlendirme (--horizon parameter)
-│   └── visualize.py    – Görselleştirme
-├── data/trajectories/  – Toplanan trajektori dosyaları (*.pt)
+│   ├── train.py        – Training loop (--horizon parameter)
+│   ├── vlm_client.py   – VLM HTTP client (vLLM / OpenAI-compatible)
+│   ├── inference.py    – Closed-loop inference + evaluation (--horizon parameter)
+│   └── visualize.py    – Visualization
+├── data/trajectories/  – Collected trajectory files (*.pt)
 └── runs/
-    ├── nav_h1/, nav_h2/, ...  – Horizon-specific model checkpointleri
-    ├── vis_h1/, vis_h2/, ...  – Horizon-specific inference sonuçları
-    ├── train_summary.json     – Training ablation özeti
-    └── inference_summary.json – Inference ablation özeti
+    ├── nav_h1/, nav_h2/, ...  – Horizon-specific model checkpoints
+    ├── vis_h1/, vis_h2/, ...  – Horizon-specific inference results
+    ├── train_summary.json     – Training ablation summary
+    └── inference_summary.json – Inference ablation summary
 ```
 
-Tüm komutlar proje kökünden (`/mnt/beegfs/LLM/onuralpguvercin/ROBOTICS`) çalıştırılır.
+All commands are run from the project root (`/mnt/beegfs/LLM/onuralpguvercin/ROBOTICS`).
 
 ---
 
-## Adım Adım Kullanım
+## Step-by-Step Usage
 
-### Adım 1 — Veri Topla
+### Step 1 — Collect Data
 
-**Ne yapar:** MuJoCo'da rastgele sahneler oluşturur. Her sahnede 2–4 renkli kutu/küre var. Robot kolu her nesneye sırayla yaklaşır; her adımda kameradan görüntü, robot kolunun pozisyonu (ee_pos) ve nesnenin bbox'ı (gt_bbox) kaydedilir.
+**What it does:** Creates random scenes in MuJoCo. Each scene contains 2–4 colored boxes/spheres. The robot arm approaches each object in sequence; at every step the camera image, end-effector position (ee_pos), and ground-truth bounding box (gt_bbox) are recorded.
 
 ```bash
 python final_project/src/collect.py --n-scenes 300 --n-workers 8 --seed 200 --out-dir final_project/data/trajectories
 ```
 
-**Çıktı:**
-- `data/trajectories/traj_XXXXXX_<renk_şekil_i>.pt` — her başarılı trajektori için bir dosya
-- `data/trajectories/metadata.json` — istatistikler
+**Output:**
+- `data/trajectories/traj_XXXXXX_<color_shape_i>.pt` — one file per successful trajectory
+- `data/trajectories/metadata.json` — statistics
 
 ---
 
-### Adım 2 — Toplanan Veriyi Görselleştir
+### Step 2 — Visualize Collected Data
 
-**Ne yapar:** Başarılı trajektorilerden rastgele örnekler seçer, her birinden 6 frame + GT bbox çizer.
+**What it does:** Selects random samples from successful trajectories and draws 6 frames + GT bbox from each.
 
 ```bash
 python final_project/src/visualize.py --mode trajectories --data-dir final_project/data/trajectories --n-samples 4 --out-dir final_project/runs/vis
 ```
 
-**Çıktı:** `runs/vis/<traj_adı>_frames.png`
+**Output:** `runs/vis/<traj_name>_frames.png`
 
 ---
 
-### Adım 3 — Modeli Eğit
+### Step 3 — Train the Model
 
-**Ne yapar:** GT bbox'lar ile `(bbox + ee_pos) → horizon adım delta` ilişkisini öğrenir.
+**What it does:** Learns the `(bbox + ee_pos) → horizon-step delta` mapping using GT bboxes.
 
 ```bash
-# Tek horizon
+# Single horizon
 python final_project/src/train.py --horizon 1 --data-dir final_project/data/trajectories --run-dir final_project/runs/nav_h1 --epochs 200
 ```
 
-**Ya da çoklu horizons (1-5):**
+**Or multiple horizons (1–5):**
 ```bash
 python final_project/src/train.py --horizon 1 2 3 4 5 --data-dir final_project/data/trajectories --run-dir final_project/runs/navigation --epochs 200 --batch-size 128
 ```
 
-**Çıktı:**
-- `runs/nav_h1/best.pt`, `runs/nav_h2/best.pt`, ... — her horizon için model
-- `runs/train_summary.json` — özet (test_mse per horizon)
+**Output:**
+- `runs/nav_h1/best.pt`, `runs/nav_h2/best.pt`, ... — model per horizon
+- `runs/train_summary.json` — summary (test_mse per horizon)
 
 ---
 
-### Adım 4 — Inference Al
+### Step 4 — Run Inference
 
-**Ne yapar:** Eğitilen modeli kapalı döngüde test eder. Varsayılan modda bbox VLM'den gelir; `--use-gt-bbox` verilirse VLM atlanır ve ground-truth bbox kullanılır. Model raw delta tahmin eder, inference sırasında her delta bileşeni `--max-delta` ile clamp edilir (`0` verilirse clamp kapanır).
+**What it does:** Tests the trained model in closed-loop. In the default mode, bboxes come from the VLM; passing `--use-gt-bbox` skips the VLM and uses ground-truth bboxes instead. The model predicts raw deltas; during inference each delta component is clamped by `--max-delta` (set to `0` to disable clamping).
 
 ```bash
-# Tek horizon, VLM bbox
+# Single horizon, VLM bbox
 python final_project/src/inference.py --checkpoint final_project/runs/nav_h1/best.pt --horizon 1 --n-episodes 50 --vlm-url http://localhost:8000 --out-dir final_project/runs/vis_h1 --save-vis --max-delta 0.05
 ```
 
 ```bash
-# Tek horizon, GT bbox ablation
+# Single horizon, GT bbox ablation
 python final_project/src/inference.py --checkpoint final_project/runs/nav_h1/best.pt --horizon 1 --n-episodes 50 --use-gt-bbox --out-dir final_project/runs/vis_h1_gt --save-vis --max-delta 0.05
 ```
 
 ```bash
-# Çoklu horizons (1-5), VLM bbox
+# Multiple horizons (1–5), VLM bbox
 python final_project/src/inference.py --horizon 1 2 3 4 5 --n-episodes 20 --vlm-url http://localhost:8000 --out-dir final_project/runs --save-vis --max-delta 0.05
 ```
 
 ```bash
-# Çoklu horizons (1-5), GT bbox ablation
+# Multiple horizons (1–5), GT bbox ablation
 python final_project/src/inference.py --horizon 1 2 3 4 5 --n-episodes 20 --use-gt-bbox --out-dir final_project/runs --save-vis --max-delta 0.05
 ```
 
-**Çıktı:**
-- `runs/vis_h1/eval_results.json`, `runs/vis_h2/eval_results.json`, ... — her horizon sonuçları
-- `runs/inference_summary.json` — özet (success_rate vs horizon)
+**Output:**
+- `runs/vis_h1/eval_results.json`, `runs/vis_h2/eval_results.json`, ... — results per horizon
+- `runs/inference_summary.json` — summary (success_rate vs horizon)
 
 ---
 
-### Adım 5 — Sonuçları Görselleştir
+### Step 5 — Visualize Results
 
-**a) Başarı özeti:**
+**a) Horizon comparison (success rate / distance / steps across all horizons):**
 
 ```bash
-python final_project/src/visualize.py --mode eval-summary --eval-json final_project/runs/vis/eval_results.json --out-dir final_project/runs/vis
+python final_project/src/visualize.py --mode horizon-compare --run-dir final_project/runs --out-dir final_project/runs/vis
+```
+
+**Output:** `runs/vis/horizon_comparison.png` — 3-panel plot comparing all `vis_h*/eval_results.json` files.
+
+---
+
+**b) Başarı özeti:**
+
+```bash
+python final_project/src/visualize.py --mode eval-summary --eval-json final_project/runs/vis_h1/eval_results.json --out-dir final_project/runs/vis
 ```
 
 **Çıktı:** `runs/vis/eval_summary.png`
 
 ---
 
-**b) Eğitim eğrisi:**
+**c) Eğitim eğrisi:**
 
 ```bash
-python final_project/src/visualize.py --mode training --run-dir final_project/runs/navigation --out-dir final_project/runs/vis
+python final_project/src/visualize.py --mode training --run-dir final_project/runs/nav_h1 --out-dir final_project/runs/vis
 ```
 
 **Çıktı:** `runs/vis/training_curves.png`
 
 ---
 
-**c) Episode top-down trajektori:**
+**d) Episode top-down trajektori:**
 
 ```bash
-python final_project/src/visualize.py --mode episodes --eval-json final_project/runs/vis/eval_results.json --n-samples 5 --out-dir final_project/runs/vis
+python final_project/src/visualize.py --mode episodes --eval-json final_project/runs/vis_h1/eval_results.json --n-samples 5 --out-dir final_project/runs/vis
 ```
 
 **Çıktı:** `runs/vis/ep000_traj.png`
 
 ---
 
-## Sistem Şeması
+## System Diagram
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                     INFERENCE DÖNGÜSÜ                        │
+│                      INFERENCE LOOP                          │
 │                    (Configurable HORIZON)                    │
 │                                                              │
-│  env.reset() → hedef nesne seç                               │
+│  env.reset() → select target object                          │
 │       │                                                      │
 │       ▼                                                      │
-│  ┌─────────┐   görüntü + nesne adı     ┌──────────┐          │
-│  │ MuJoCo  │ --------------------->    │  Qwen3   │          │
-│  │   Env   │ <-- bbox (cx,cy,w,h) ─    │  :8000   │          │
-│  └────┬────┘                           └──────────┘          │
+│  ┌─────────┐   image + object name        ┌──────────┐       │
+│  │ MuJoCo  │ ----------------------->     │  Qwen3   │       │
+│  │   Env   │ <-- bbox (cx,cy,w,h) ──       │  :8000   │       │
+│  └────┬────┘                              └──────────┘       │
 │       │ ee_pos                                               │
 │       ▼                                                      │
 │  ┌──────────────────────────────────────┐                    │
 │  │     NavigationMLP(horizon=H)         │                    │
 │  │  7 → 256 → 256 → 256 → (3*H)         │                    │
-│  │  giriş : bbox(4) + ee_pos(3)         │                    │
-│  │  çıkış : H × EE delta (metre)        │                    │
+│  │  input  : bbox(4) + ee_pos(3)        │                    │
+│  │  output : H × EE delta (metres)      │                    │
 │  └────────────┬─────────────────────────┘                    │
 │               │                                              │
 │               ▼                                              │
-│   H delta'sı sırayla clamp edip uygula → temas/distance      │
-│   başarılı → BAŞARILI                                        │
-│   H adım sonra → VLM'i tekrar sorgula (H adım = 1 query)     │
+│   Apply H deltas sequentially (clamped) → contact/distance   │
+│   contact → SUCCESS                                          │
+│   after H steps → query VLM again (H steps = 1 query)        │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Metrikler
+## Metrics
 
-| Metrik | Açıklama |
+| Metric | Description |
 |---|---|
-| Success rate | Nesneye dokunan episode yüzdesi |
-| Mean final distance | Episode sonundaki EE-nesne mesafesi |
-| Mean steps (success) | Başarılı episodelarda ortalama adım sayısı |
-| Test MSE | MLP'nin test setindeki tahmin hatası |
-| Test RMSE | √(MSE) — metre cinsinden delta uzayında |
+| Success rate | Percentage of episodes where the arm touches the object |
+| Mean final distance | EE-to-object distance at the end of the episode |
+| Mean steps (success) | Average number of steps in successful episodes |
+| Test MSE | MLP prediction error on the test set |
+| Test RMSE | √(MSE) — delta-space error in metres |
