@@ -1,11 +1,11 @@
 {
   "summary": {
-    "n_episodes": 64,
-    "n_success": 52,
-    "success_rate": 0.8125,
-    "mean_final_dist": 0.18550977428002113,
-    "std_final_dist": 0.27446521799871326,
-    "mean_steps_success": 25.53846153846154,
+    "n_episodes": 100,
+    "n_success": 100,
+    "success_rate": 1.0,
+    "mean_final_dist": 0.05003966964358295,
+    "std_final_dist": 0.03519230576066519,
+    "mean_steps_success": 35.85,
     "vlm_used": false,
     "max_delta": 0.05
   },

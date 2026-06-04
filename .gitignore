@@ -2,3 +2,4 @@
 __pycache__
 .vscode
 final_project/data
+final_project/runs/checkpoints

@@ -131,7 +131,7 @@ def num():
 
 
 # =============================================================================
-# 1 — Title
+# 1 - Title
 # =============================================================================
 s = slide()
 rect(s, 0, 0, SW, SH, NAVY)
@@ -149,13 +149,13 @@ txt(s, Inches(0.92), Inches(4.7), Inches(11.6), Inches(1.7),
     space_after=10)
 
 # =============================================================================
-# 2 — Objective
+# 2 - Objective
 # =============================================================================
 s = slide()
-header(s, "Objective", "WHAT ARE WE SOLVING?")
+header(s, "Objective")
 bullets(s, [
     (0, "Task: a robot arm must reach out and touch a specific object named in "
-        "natural language — e.g. \"the red cube\".", "b"),
+        "natural language - e.g. \"the red cube\".", "b"),
     (1, "Scene: a tabletop with 2–4 differently coloured boxes and spheres at "
         "random positions (6 colours × 2 shapes)."),
     (1, "The robot sees only a top-down camera image; it is never told the "
@@ -165,17 +165,17 @@ bullets(s, [
         "target, while a small learned policy acts as the \"hands\" that move "
         "toward it?"),
     (0, "Success metric", "ob"),
-    (1, "An episode succeeds if the end-effector makes contact with — or comes "
-        "within 5 cm of — the correct target."),
-    (1, "We report success rate, final EE-to-object distance, and steps taken."),
+    (1, "An episode succeeds if the end-effector makes contact with - or comes "
+        "within 5 cm of - the correct target."),
+    (1, "Success rate, final EE-to-object distance, and steps taken are reported."),
 ], y=Inches(1.5), gap=12, size=19)
 footer(s, num())
 
 # =============================================================================
-# 3 — Architecture (diagram)
+# 3 - Architecture (diagram)
 # =============================================================================
 s = slide()
-header(s, "System Architecture", "PERCEPTION → CONTROL → ACTION, IN A CLOSED LOOP")
+header(s, "System Architecture")
 
 box_y = Inches(1.95); box_h = Inches(1.45); bw = Inches(2.7); gap = Inches(0.45)
 x0 = Inches(0.7)
@@ -210,99 +210,105 @@ txt(s, Inches(0.7), Inches(3.55), Inches(12), Inches(0.45),
        "(H steps = 1 VLM call).", 15, GREY, False, True)]], align=PP_ALIGN.CENTER)
 
 bullets(s, [
-    (1, "Perception (VLM): localises the named object as a normalised bounding box. Used off-the-shelf, weights frozen."),
-    (1, "Control (MLP): 7-D input  [bbox(4) + ee_pos(3)]  →  3·H end-effector deltas in metres."),
-    (1, "The policy is trained purely by behaviour cloning on a scripted expert — no reinforcement learning, no VLM training."),
-], y=Inches(4.15), gap=11, size=16.5)
+    (1, "Perception (VLM): localises the named object as a normalised bounding box - off-the-shelf, weights frozen."),
+    (1, "Control (MLP): 7-D input  [bbox(4) + ee_pos(3)]  →  3·H deltas, predicting H steps of motion in one shot. Trained purely by behaviour cloning - no RL, no VLM training."),
+    (1, "Horizon H is the same knob in both training and inference."),
+    (1, "Training: each sample regresses H consecutive expert deltas, so the MLP's output head is sized 3·H."),
+    (1, "Inference: those H deltas run before the next VLM call - small H = more re-planning & VLM cost, large H = cheaper but more open-loop drift (H = 1–5 is swept)."),
+], y=Inches(4.05), gap=7, size=15)
 footer(s, num())
 
 # =============================================================================
-# 4 — Method: data collection
+# 4 - Method: data collection
 # =============================================================================
 s = slide()
-header(s, "Method · 1 — Data Collection", "TEACHING WITH A SCRIPTED EXPERT")
+header(s, "Data Collection")
 bullets(s, [
-    (0, "An automated expert generates the demonstrations — no human teleop.", "b"),
-    (1, "Each scene spawns 2–4 objects via rejection sampling (≥ 10 cm apart, unique colours)."),
-    (1, "For every object, a straight-line controller drives the end-effector "
-        "toward it in small 4 cm steps."),
-    (0, "What is recorded at each step", "ob"),
-    (1, "the top-down RGB image (128×128),"),
-    (1, "the end-effector position ee_pos (xyz),"),
-    (1, "the ground-truth bounding box, computed by projecting the object "
-        "through the camera matrix."),
-    (0, "Only successful reaches are saved", "ob"),
-    (1, "contact is detected from MuJoCo geom collisions between gripper and target;"),
-    (1, "collection is parallelised across worker processes, each with its own seed."),
-], y=Inches(1.45), gap=8, size=17)
+    (0, "An automated scripted expert generates every demonstration - no human teleop, no learning here.", "b"),
+    (1, "Its only job is to produce the correct answer the policy will later imitate; the intelligence lives in the data, not the controller."),
+    (0, "For each random scene (2–4 objects, rejection-sampled ≥ 10 cm apart, unique colour + shape)", "ob"),
+    (1, "every object in the scene is targeted in turn;"),
+    (1, "a straight-line controller drives the end-effector toward the target's (x, y) in 4 cm steps - capped so it never overshoots."),
+    (0, "Logged at every step", "ob"),
+    (1, "top-down RGB image (128×128) and end-effector position ee_pos (xyz);"),
+    (1, "the ground-truth bbox - the object's true 3-D position projected through the camera matrix (not a vision model)."),
+    (0, "What gets saved", "ob"),
+    (1, "a reach ends on gripper–target contact (MuJoCo geom collision); only successful reaches are stored - one .pt file per trajectory."),
+    (1, "parallelised across seeded worker processes → ~2,700 demonstrations."),
+    (0, "Action labels (Δee) are not stored - they are derived in training as ee[t+1] − ee[t]. The VLM is never used during collection.", "rb"),
+], y=Inches(1.4), gap=6, size=15)
 footer(s, num())
 
 # =============================================================================
-# 5 — Method: policy + behaviour cloning
+# 5 - Method: policy + behaviour cloning
 # =============================================================================
 s = slide()
-header(s, "Method · 2 — Policy & Behaviour Cloning", "A SMALL RESIDUAL MLP THAT OUTPUTS MOTION")
+header(s, "Policy & Behaviour Cloning")
 bullets(s, [
-    (0, "NavigationMLP — a residual MLP (width 512, 4 residual blocks, SiLU + LayerNorm).", "b"),
+    (0, "NavigationMLP - a residual MLP (width 512, 4 residual blocks, SiLU + LayerNorm).", "b"),
     (1, "Input  (7-D):  bbox(cx,cy,w,h)  +  normalised ee_pos(x,y,z)."),
     (1, "Output  (3·H):  end-effector deltas Δee in metres, H steps ahead."),
     (0, "Trained by behaviour cloning (supervised regression)", "ob"),
-    (1, "Target = the expert's actual step-to-step Δee; loss = MSE on the deltas."),
+    (1, "Target = the expert's next H step-to-step Δee (the same horizon used at inference); loss = MSE on the deltas."),
+    (1, "Each training sample regresses a whole H-step block at once, so the policy learns to plan the horizon, not just one step."),
     (1, "AdamW + warmup→cosine LR; the output head is zero-initialised so the "
         "policy starts from gentle, near-zero motions."),
     (0, "Honest evaluation", "ob"),
     (1, "Stratified train/val/test split by colour+shape; samples from one "
         "trajectory never leak across splits."),
-    (1, "Test RMSE ≈ 0.0007 m — the policy reproduces expert deltas almost exactly."),
-], y=Inches(1.45), gap=8, size=17)
+    (1, "Test RMSE ≈ 0.0007 m - the policy reproduces expert deltas almost exactly."),
+], y=Inches(1.45), gap=6, size=16)
 footer(s, num())
 
 # =============================================================================
-# 6 — Critical implementation details
+# 6 - Critical implementation details
 # =============================================================================
 s = slide()
-header(s, "Method · 3 — Critical Design Choices", "THE DECISIONS THAT MAKE IT WORK")
+header(s, "Critical Design Choices")
 bullets(s, [
     (0, "Fixed bounding box per episode.", "b"),
-    (1, "The bbox is read once and held constant; the loop closes on ee_pos, not on "
-        "a re-detected box. This makes behaviour robust to frame-to-frame VLM jitter."),
+    (1, "The bbox is read once at the start - when the object is clearly visible - "
+        "and held constant; the loop then closes on ee_pos, not on a re-detected box."),
+    (1, "As the arm moves over the target, the gripper occludes the object, so a fresh "
+        "detection mid-reach would be unreliable or fail; holding the initial box avoids this."),
     (0, "Delta actions with clamping (±5 cm/step).", "b"),
-    (1, "Predicting relative motion (not absolute targets) keeps every step bounded "
-        "and stable — no large jumps."),
+    (1, "The policy predicts relative motion (Δee), not an absolute target - every "
+        "command is a small step from the current pose, not a jump to a far point."),
+    (1, "Each delta is clipped to ±5 cm per axis (≈ the expert's 4 cm step), so even a "
+        "wrong prediction can only nudge the arm - keeping the closed loop stable."),
     (0, "Configurable horizon H (1–5).", "b"),
-    (1, "H = how many steps run per VLM query. Small H = more re-planning (costly, "
-        "accurate); large H = more open-loop drift between queries."),
-    (0, "Robust VLM parsing + fallback.", "b"),
-    (1, "Strips <think> reasoning, auto-detects 0–1000 / 0–128 / 0–1 coordinate "
-        "scales, and falls back to a GT bbox if a call fails."),
-], y=Inches(1.45), gap=9, size=17)
+    (1, "H sets how many predicted steps are executed before the VLM is queried "
+        "again - directly trading perception cost against open-loop accuracy."),
+    (1, "Small H = frequent re-planning (more VLM calls, tighter tracking); "
+        "large H = cheaper but more drift between detections."),
+], y=Inches(1.45), gap=10, size=17)
 footer(s, num())
 
 # =============================================================================
-# 7 — Why VLM not trained + GRPO motivation
+# 7 - Why VLM not trained + GRPO motivation
 # =============================================================================
 s = slide()
-header(s, "We Did Not Train the VLM", "A SCOPE DECISION — AND THE PATH WE WOULD TAKE")
+header(s, "The VLM Was Not Trained")
 bullets(s, [
     (0, "In this project Qwen3-VL-4B is used frozen, off-the-shelf, as the detector.", "b"),
     (1, "Fine-tuning a 4-billion-parameter vision-language model needs multi-GPU "
-        "memory and long training runs — compute we did not have."),
-    (1, "So our contribution is the end-to-end pipeline + the control policy, with "
+        "memory and long training runs - compute that was not available."),
+    (1, "So the contribution is the end-to-end pipeline + the control policy, with "
         "the VLM as a plug-in perception module."),
     (0, "If compute had been available", "ob"),
-    (1, "We would fine-tune the VLM with GRPO (Group Relative Policy Optimization)."),
+    (1, "The VLM would be fine-tuned with GRPO (Group Relative Policy Optimization)."),
     (1, "Reward = how well the predicted bbox matches the target "
         "(IoU / centre error), or even downstream reaching success."),
-    (1, "This adapts the detector to our exact camera, lighting, and object set — "
+    (1, "This adapts the detector to the exact camera, lighting, and object set - "
         "directly attacking the VLM-vs-GT gap shown in the results."),
 ], y=Inches(1.5), gap=12, size=18)
 footer(s, num())
 
 # =============================================================================
-# 8 — GRPO diagram (PPO vs GRPO visual)
+# 8 - GRPO diagram (PPO vs GRPO visual)
 # =============================================================================
 s = slide()
-header(s, "PPO vs GRPO — The Idea", "GRPO DROPS THE CRITIC AND USES A GROUP BASELINE")
+header(s, "PPO vs GRPO - The Idea")
 pic_fit(s, ASSETS / "grpo_diagram.png", Inches(0.4), Inches(1.35),
         Inches(8.6), Inches(5.4))
 txt(s, Inches(0.5), Inches(6.75), Inches(8.4), Inches(0.4),
@@ -321,16 +327,16 @@ bullets(s, [
     (1, "scores each with the "
         "reward model,"),
     (1, "uses the group's mean/std "
-        "as the baseline — no "
+        "as the baseline - no "
         "critic at all."),
 ], x=Inches(9.15), y=Inches(1.5), w=Inches(3.9), gap=8, size=14)
 footer(s, num())
 
 # =============================================================================
-# 9 — PPO vs GRPO loss functions
+# 9 - PPO vs GRPO loss functions
 # =============================================================================
 s = slide()
-header(s, "PPO vs GRPO — The Loss Functions", "SAME CLIPPED OBJECTIVE, DIFFERENT ADVANTAGE")
+header(s, "PPO vs GRPO - The Loss Functions")
 
 # shared ratio
 txt(s, Inches(0.55), Inches(1.25), Inches(4.0), Inches(0.35),
@@ -364,29 +370,34 @@ txt(s, rx + Inches(0.25), py + Inches(2.5), lw - Inches(0.5), Inches(1.4),
 footer(s, num())
 
 # =============================================================================
-# 10 — Results: success rate bars
+# 10 - Results: success rate bars
 # =============================================================================
 s = slide()
-header(s, "Results · Success Rate", "VLM-IN-THE-LOOP vs GROUND-TRUTH BBOX (ORACLE)")
+header(s, "Results · Success Rate")
 pic_fit(s, ASSETS / "success_bars.png", Inches(0.55), Inches(1.4), Inches(8.45), Inches(5.4))
 bullets(s, [
-    (0, "Same policy in both runs.", "b"),
-    (1, "Only the bbox source changes."),
-    (0, "GT bbox peaks at H=2 → 100%.", "ob"),
-    (0, "VLM bbox is flatter: 65–78%.", "b"),
-    (1, "The gap is the cost of "
+    (0, "Same policy in both runs - "
+        "only the bbox source changes.", "b"),
+    (0, "GT bbox: a clean, monotonic "
+        "curve.", "ob"),
+    (1, "100% at H=1–2, then a smooth "
+        "drop as longer horizons drift "
+        "open-loop."),
+    (0, "VLM bbox: flat & noisy "
+        "(65–78%).", "b"),
+    (1, "Wrong boxes - not horizon - "
+        "decide the outcome, so the "
+        "curve loses its shape."),
+    (1, "The GT–VLM gap = the cost of "
         "imperfect perception."),
-    (0, "VLM degrades least at H=4–5,", "b"),
-    (1, "where open-loop drift hurts "
-        "both runs anyway."),
 ], x=Inches(9.15), y=Inches(1.6), w=Inches(3.9), gap=10, size=14.5)
 footer(s, num())
 
 # =============================================================================
-# 11 — Results: trends + qualitative
+# 11 - Results: trends + qualitative
 # =============================================================================
 s = slide()
-header(s, "Results · Trends & A Real Episode", "ACCURACY VS HORIZON, AND WHAT IT LOOKS LIKE")
+header(s, "Results · Trends & A Real Episode")
 pic_fit(s, ASSETS / "gt_vs_vlm.png", Inches(0.4), Inches(1.35), Inches(8.4), Inches(3.05))
 txt(s, Inches(0.55), Inches(4.45), Inches(8.2), Inches(0.3),
     [[("VLM-bbox episode (H=2): the predicted box (red) tracks the blue cube as the arm reaches it.",
@@ -394,8 +405,8 @@ txt(s, Inches(0.55), Inches(4.45), Inches(8.2), Inches(0.3),
 pic_fit(s, ASSETS / "vlm_episode.png", Inches(0.55), Inches(4.7), Inches(8.1), Inches(2.45))
 bullets(s, [
     (0, "Final distance", "ob"),
-    (1, "GT reaches ~6 cm at best."),
-    (1, "VLM stays ~14–23 cm — bbox "
+    (1, "GT reaches ~5 cm at best."),
+    (1, "VLM stays ~14–23 cm - bbox "
         "error biases the goal point."),
     (0, "Sweet spot: H = 2–3", "ob"),
     (1, "enough look-ahead, not yet "
@@ -407,45 +418,46 @@ bullets(s, [
 footer(s, num())
 
 # =============================================================================
-# 12 — Results: interpretation
+# 12 - Results: interpretation
 # =============================================================================
 s = slide()
-header(s, "Results · What the Gap Means", "READING THE NUMBERS")
+header(s, "Results · What the Gap Means")
 bullets(s, [
     (0, "The policy is essentially solved.", "ob"),
-    (1, "Test RMSE ≈ 0.0007 m, and with oracle bboxes success reaches 100% (H=2). "
+    (1, "Test RMSE ≈ 0.0007 m, and with oracle bboxes success reaches 100% (H=1–2). "
         "The MLP is not the bottleneck."),
+    (0, "With a correct box, horizon behaves exactly as expected.", "ob"),
+    (1, "GT success is monotonic - highest at short H, then a smooth decline as "
+        "longer horizons drift open-loop."),
     (0, "Every VLM-run failure traces back to the bounding box.", "ob"),
-    (1, "A box that is off-centre or wrong-sized shifts the goal the arm aims at — "
-        "so the arm confidently reaches the wrong place."),
-    (1, "Because the bbox is fixed per episode, an early detection error persists "
+    (1, "An off-centre or wrong-sized box shifts the goal the arm aims at, so it "
+        "confidently reaches the wrong place; fixed per episode, that error persists "
         "for the whole reach."),
-    (0, "Horizon is a perception-cost trade-off.", "ob"),
-    (1, "Small H re-queries the VLM often (accurate but slow); large H drifts "
-        "open-loop. H=2–3 balances both."),
-    (0, "Implication: improving perception — not control — is what raises success. "
+    (1, "These wrong boxes - not the horizon - dominate the VLM error, so its curve "
+        "stays flat and noisy instead of monotonic like GT."),
+    (0, "Implication: improving perception - not control - is what raises success. "
         "That is exactly what GRPO fine-tuning would target.", "b"),
-], y=Inches(1.5), gap=11, size=18)
+], y=Inches(1.5), gap=9, size=17)
 footer(s, num())
 
 # =============================================================================
-# 13 — Conclusion
+# 13 - Conclusion
 # =============================================================================
 s = slide()
-header(s, "Conclusion & Future Work", "WHAT WE LEARNED")
+header(s, "Conclusion & Future Work")
 bullets(s, [
     (0, "A frozen VLM + a tiny behaviour-cloned MLP is enough to build a working "
         "language-conditioned reaching system.", "b"),
-    (0, "The learned controller is near-perfect — up to 100% success with oracle "
+    (0, "The learned controller is near-perfect - up to 100% success with oracle "
         "bboxes; it is not the limiting factor.", "ob"),
-    (0, "Perception is the bottleneck — swapping the oracle for the off-the-shelf "
-        "VLM costs ~15–25 success points.", "ob"),
+    (0, "Perception is the bottleneck - swapping the oracle for the off-the-shelf "
+        "VLM costs ~25 success points at short horizons.", "ob"),
     (0, "Clear next step:", "ob"),
-    (1, "fine-tune the VLM with GRPO (reward = bbox accuracy / reaching success) "
-        "to close the perception gap — the one piece compute prevented here."),
-    (1, "GRPO is the natural fit: the reward is cheap to compute and it needs no "
-        "value network."),
-    (0, "Practical operating point: horizon H = 2–3 — strong accuracy with fewer "
+    (1, "the VLM is fine-tuned with GRPO (reward = bbox accuracy / reaching success) "
+        "to close the perception gap - the one piece that compute prevented here."),
+    (1, "GRPO is the natural fit: the reward is cheap to compute and no "
+        "value network is needed."),
+    (0, "Practical operating point: horizon H = 2–3 - strong accuracy with fewer "
         "VLM queries.", "b"),
 ], y=Inches(1.5), gap=11, size=18)
 footer(s, num())
