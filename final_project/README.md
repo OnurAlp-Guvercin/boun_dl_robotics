@@ -1,6 +1,6 @@
 # Final Project – VLM-Guided Robot Reaching
 
-The robot arm sends the camera image to a VLM (Qwen3), which returns the target object's bounding box. An MLP predicts the next 5 waypoints from this bbox + current ee_pos. The robot arm executes these waypoints sequentially; a successful episode is one where the arm touches the object.
+At the start of an episode the robot arm sends the camera image to a VLM (Qwen3), which returns the target object's bounding box. This bbox is **queried only once** and held fixed for the whole episode (it is *not* re-queried). At each control block an MLP predicts the next `H` end-effector deltas from `(fixed bbox + current ee_pos)`, and the arm applies them sequentially. An episode counts as a success when the arm **contacts** the object **or** the end-effector comes within **5 cm (xy)** of it.
 
 ---
 
@@ -177,22 +177,25 @@ python final_project/src/visualize.py --mode episodes --eval-json final_project/
 │       │                                                      │
 │       ▼                                                      │
 │  ┌─────────┐   image + object name        ┌──────────┐       │
-│  │ MuJoCo  │ ----------------------->     │  Qwen3   │       │
+│  │ MuJoCo  │ ---- (queried ONCE) ----->    │  Qwen3   │       │
 │  │   Env   │ <-- bbox (cx,cy,w,h) ──       │  :8000   │       │
 │  └────┬────┘                              └──────────┘       │
-│       │ ee_pos                                               │
+│       │ bbox held FIXED for the whole episode                │
+│       │ ee_pos (re-read every step)                          │
 │       ▼                                                      │
 │  ┌──────────────────────────────────────┐                    │
 │  │     NavigationMLP(horizon=H)         │                    │
-│  │  7 → 256 → 256 → 256 → (3*H)         │                    │
+│  │  residual MLP (LayerNorm + SiLU):    │                    │
+│  │  7 → 512 → 4×ResBlock(512) → 256 → 3H│                    │
 │  │  input  : bbox(4) + ee_pos(3)        │                    │
 │  │  output : H × EE delta (metres)      │                    │
 │  └────────────┬─────────────────────────┘                    │
 │               │                                              │
 │               ▼                                              │
-│   Apply H deltas sequentially (clamped) → contact/distance   │
-│   contact → SUCCESS                                          │
-│   after H steps → query VLM again (H steps = 1 query)        │
+│   Apply H deltas sequentially (clamped by --max-delta)       │
+│   contact OR ee within 5 cm (xy) → SUCCESS                   │
+│   after H steps → re-plan with the SAME fixed bbox           │
+│                   (the VLM is NOT queried again)             │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -202,8 +205,16 @@ python final_project/src/visualize.py --mode episodes --eval-json final_project/
 
 | Metric | Description |
 |---|---|
-| Success rate | Percentage of episodes where the arm touches the object |
+| Success rate | Percentage of episodes where the arm **contacts** the object **or** the EE reaches within 5 cm (xy) of it (note: data collection counts contact only) |
 | Mean final distance | EE-to-object distance at the end of the episode |
 | Mean steps (success) | Average number of steps in successful episodes |
 | Test MSE | MLP prediction error on the test set |
 | Test RMSE | √(MSE) — delta-space error in metres |
+
+---
+
+## Notes on Method & Results
+
+- **Expert demonstrations are scripted, not learned.** During data collection (`collect_scene`) the controller uses the object's **ground-truth position** to walk the EE in a straight line toward it. Behaviour cloning simply regresses this expert. With ground-truth bboxes the reaching task is therefore almost trivially solvable (~100% success at low horizon); the project's real test is robustness to *VLM-predicted* bboxes.
+- **The success criterion differs between stages.** Data collection counts success by **contact only**, whereas evaluation counts **contact OR EE within 5 cm (xy)**.
+- **Horizon degrades performance even with ground-truth bboxes** (e.g. H=5 with GT bbox ≈ 66%). Larger horizons apply longer open-loop chunks and re-plan less often, so compounding **control** error — not VLM perception — dominates the failures at high horizon. This is also why the GT–VLM gap narrows as the horizon grows.
