@@ -378,18 +378,20 @@ pic_fit(s, ASSETS / "success_bars.png", Inches(0.55), Inches(1.4), Inches(8.45),
 bullets(s, [
     (0, "Same policy in both runs - "
         "only the bbox source changes.", "b"),
-    (0, "GT bbox: a clean, monotonic "
-        "curve.", "ob"),
-    (1, "100% at H=1–2, then a smooth "
-        "drop as longer horizons drift "
-        "open-loop."),
-    (0, "VLM bbox: flat & noisy "
-        "(65–78%).", "b"),
-    (1, "Wrong boxes - not horizon - "
-        "decide the outcome, so the "
-        "curve loses its shape."),
-    (1, "The GT–VLM gap = the cost of "
-        "imperfect perception."),
+    (0, "GT bbox: 64–81% across "
+        "horizons.", "ob"),
+    (1, "Best at H=4 (81%); no clear "
+        "monotonic trend - open-loop "
+        "drift is not the dominant "
+        "factor at this scale."),
+    (0, "VLM bbox: 67–78%, within "
+        "≤9 pp of GT.", "b"),
+    (1, "Qwen3-VL bboxes are "
+        "competitive; the gap "
+        "closes significantly vs "
+        "prior expectations."),
+    (1, "H=5 shows the clearest "
+        "VLM penalty (75% vs 67%)."),
 ], x=Inches(9.15), y=Inches(1.6), w=Inches(3.9), gap=10, size=14.5)
 footer(s, num())
 
@@ -404,16 +406,18 @@ txt(s, Inches(0.55), Inches(4.45), Inches(8.2), Inches(0.3),
        11.5, GREY, False, True)]])
 pic_fit(s, ASSETS / "vlm_episode.png", Inches(0.55), Inches(4.7), Inches(8.1), Inches(2.45))
 bullets(s, [
-    (0, "Final distance", "ob"),
-    (1, "GT reaches ~5 cm at best."),
-    (1, "VLM stays ~14–23 cm - bbox "
-        "error biases the goal point."),
-    (0, "Sweet spot: H = 2–3", "ob"),
-    (1, "enough look-ahead, not yet "
-        "drifting open-loop."),
+    (0, "Mean final distance", "ob"),
+    (1, "GT: 15–26 cm (all eps)."),
+    (1, "VLM: 14–24 cm - comparable "
+        "to GT, slight edge at H=3–5."),
+    (0, "Sweet spot: H = 3–4", "ob"),
+    (1, "best balance of replanning "
+        "frequency and open-loop "
+        "drift for both bbox sources."),
     (0, "Takeaway", "ob"),
-    (1, "the controller is near-perfect; "
-        "perception is the limiter."),
+    (1, "VLM perception is competitive; "
+        "GRPO fine-tuning could close "
+        "the remaining gap."),
 ], x=Inches(9.0), y=Inches(1.5), w=Inches(4.05), gap=8, size=14.5)
 footer(s, num())
 
@@ -423,20 +427,19 @@ footer(s, num())
 s = slide()
 header(s, "Results · What the Gap Means")
 bullets(s, [
-    (0, "The policy is essentially solved.", "ob"),
-    (1, "Test RMSE ≈ 0.0007 m, and with oracle bboxes success reaches 100% (H=1–2). "
-        "The MLP is not the bottleneck."),
-    (0, "With a correct box, horizon behaves exactly as expected.", "ob"),
-    (1, "GT success is monotonic - highest at short H, then a smooth decline as "
-        "longer horizons drift open-loop."),
-    (0, "Every VLM-run failure traces back to the bounding box.", "ob"),
-    (1, "An off-centre or wrong-sized box shifts the goal the arm aims at, so it "
-        "confidently reaches the wrong place; fixed per episode, that error persists "
-        "for the whole reach."),
-    (1, "These wrong boxes - not the horizon - dominate the VLM error, so its curve "
-        "stays flat and noisy instead of monotonic like GT."),
-    (0, "Implication: improving perception - not control - is what raises success. "
-        "That is exactly what GRPO fine-tuning would target.", "b"),
+    (0, "Strong behaviour cloning baseline.", "ob"),
+    (1, "Test RMSE ≈ 0.0007 m - the MLP reproduces expert deltas almost exactly. "
+        "The control policy is not the bottleneck."),
+    (0, "GT performance: 64–81%, best at H=4.", "ob"),
+    (1, "No strict monotonic decline - at 100 episodes/horizon, episode variance "
+        "is large enough that horizon ordering is noisy."),
+    (0, "VLM perception is competitive (67–78%).", "ob"),
+    (1, "Qwen3-VL bboxes keep the arm close to the right target in most episodes; "
+        "fixed per episode, a good initial box is enough."),
+    (1, "The remaining GT–VLM gap (≤9 pp) represents the cost of imperfect "
+        "localisation - exactly what GRPO fine-tuning would close."),
+    (0, "Implication: a frozen off-the-shelf VLM already reaches 67–78% success; "
+        "fine-tuning the detector is the clear next lever.", "b"),
 ], y=Inches(1.5), gap=9, size=17)
 footer(s, num())
 
@@ -446,19 +449,20 @@ footer(s, num())
 s = slide()
 header(s, "Conclusion & Future Work")
 bullets(s, [
-    (0, "A frozen VLM + a tiny behaviour-cloned MLP is enough to build a working "
+    (0, "A frozen VLM + a tiny behaviour-cloned MLP builds a working "
         "language-conditioned reaching system.", "b"),
-    (0, "The learned controller is near-perfect - up to 100% success with oracle "
-        "bboxes; it is not the limiting factor.", "ob"),
-    (0, "Perception is the bottleneck - swapping the oracle for the off-the-shelf "
-        "VLM costs ~25 success points at short horizons.", "ob"),
+    (0, "The learned controller is strong - sub-mm RMSE; the policy is not the "
+        "limiting factor.", "ob"),
+    (0, "Off-the-shelf Qwen3-VL is surprisingly competitive - 67–78% success, "
+        "within ≤9 pp of oracle GT bboxes.", "ob"),
+    (0, "The remaining gap is the perception budget: better bbox localisation "
+        "directly translates to higher success.", "ob"),
     (0, "Clear next step:", "ob"),
-    (1, "the VLM is fine-tuned with GRPO (reward = bbox accuracy / reaching success) "
-        "to close the perception gap - the one piece that compute prevented here."),
-    (1, "GRPO is the natural fit: the reward is cheap to compute and no "
-        "value network is needed."),
-    (0, "Practical operating point: horizon H = 2–3 - strong accuracy with fewer "
-        "VLM queries.", "b"),
+    (1, "fine-tune the VLM with GRPO (reward = bbox accuracy / reaching success) "
+        "to close the localisation gap - the one piece compute prevented here."),
+    (1, "GRPO is the natural fit: reward is cheap to compute, no value network needed."),
+    (0, "Practical operating point: H = 3–4 - best success rate for both bbox "
+        "sources with a reasonable VLM query budget.", "b"),
 ], y=Inches(1.5), gap=11, size=18)
 footer(s, num())
 

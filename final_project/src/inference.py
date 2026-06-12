@@ -4,8 +4,10 @@ import argparse
 import json
 import math
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import torch
@@ -23,7 +25,7 @@ from env     import MultiObjectEnv           # noqa: E402
 from model   import NavigationMLP  # noqa: E402
 from utils   import compute_gt_bbox, bbox_to_input  # noqa: E402
 
-DEFAULT_CHECKPOINT  = "final_project/runs/navigation/best.pt"
+DEFAULT_CHECKPOINT  = "final_project/runs/checkpoints/navigation/best.pt"
 DEFAULT_N_EPISODES  = 50
 DEFAULT_MAX_STEPS   = 150
 DEFAULT_VLM_URL     = "http://localhost:8000"
@@ -151,9 +153,14 @@ def run_episode(
     use_gt_bbox:  bool = False,
     horizon:      int = 1,
     max_delta:    float = DEFAULT_MAX_DELTA,
+    forced_bbox:  Optional[np.ndarray] = None,
+    forced_bbox_source: str = "vlm_cached",
 ) -> dict:
     """
     Run one reaching episode with HORIZON-step predictions.
+
+    If forced_bbox is provided it is used directly (no VLM query / GT fallback).
+    This allows multi-horizon runs to share the same bbox so comparisons are fair.
 
     Returns
     -------
@@ -166,7 +173,10 @@ def run_episode(
     trajectory = []
 
     ee_pos, _, image = env.state()
-    if use_gt_bbox or vlm_client is None:
+    if forced_bbox is not None:
+        fixed_bbox  = forced_bbox
+        bbox_source = forced_bbox_source
+    elif use_gt_bbox or vlm_client is None:
         fixed_bbox = compute_gt_bbox(env.model, env.data, target_name)
         bbox_source = "gt"
     else:
@@ -251,6 +261,59 @@ def run_episode(
 
 # -- full evaluation -----------------------------------------------------------
 
+def pre_collect_vlm_bboxes(
+    n_episodes:  int,
+    vlm_url:     str,
+    vlm_model:   str,
+    n_obj_min:   int,
+    n_obj_max:   int,
+    seed:        int,
+    render_mode: str,
+) -> dict:
+    """
+    Query the VLM once for every episode and cache the results.
+
+    Returns
+    -------
+    dict keyed by episode index:
+        {"target_name": str, "bbox": np.ndarray (4,), "bbox_source": str}
+
+    The episode env / target are created with the same (seed + ep*997) formula
+    used by the normal evaluate() workers, so the scene and target are identical.
+    """
+    from vlm_client import VLMClient  # noqa: E402
+
+    vlm_client = VLMClient(base_url=vlm_url, model_name=vlm_model)
+    cache: dict = {}
+
+    for ep in tqdm(range(n_episodes), desc="pre-collecting VLM bboxes"):
+        env = MultiObjectEnv(
+            n_objects_range=(n_obj_min, n_obj_max),
+            seed=seed + ep * 997,
+            render_mode=render_mode,
+        )
+        env.reset()
+
+        obj_names = env.get_object_names()
+        rng    = np.random.default_rng(seed + ep * 997)
+        target = obj_names[int(rng.integers(len(obj_names)))]
+
+        _, _, image = env.state()
+        bbox = vlm_client.get_bbox(image, target)
+        if bbox is None:
+            bbox   = compute_gt_bbox(env.model, env.data, target)
+            source = "gt_fallback"
+        else:
+            source = "vlm"
+
+        cache[ep] = {"target_name": target, "bbox": bbox, "bbox_source": source}
+
+    n_vlm = sum(1 for v in cache.values() if v["bbox_source"] == "vlm")
+    print(f"[bbox-cache] {n_vlm}/{n_episodes} VLM, "
+          f"{n_episodes - n_vlm}/{n_episodes} GT-fallback")
+    return cache
+
+
 def evaluate(
     checkpoint:  str,
     n_episodes:  int   = DEFAULT_N_EPISODES,
@@ -267,6 +330,7 @@ def evaluate(
     save_vis:    bool  = False,
     horizon:     int   = 1,
     max_delta:   float = DEFAULT_MAX_DELTA,
+    bbox_cache:  Optional[dict] = None,
 ) -> dict:
     dev = resolve_device(device)
 
@@ -293,6 +357,10 @@ def evaluate(
         except Exception as e:
             print(f"[eval] VLM init failed ({e}) → falling back to GT bboxes")
 
+    # Serialize env creation: env.py uses np.random.seed() (global state).
+    # Parallel threads would corrupt each other's random state → wrong scenes.
+    _env_creation_lock = threading.Lock()
+
     out_path = Path(out_dir) / "eval_results.json" if out_dir else None
     vis_dir = None
     if out_dir:
@@ -303,19 +371,30 @@ def evaluate(
 
     def _run_episode_worker(ep: int) -> dict:
         """Worker function for parallel episode execution."""
-        env = MultiObjectEnv(
-            n_objects_range=(n_obj_min, n_obj_max),
-            seed=seed + ep * 997,
-            render_mode=render_mode,
-        )
-        env.reset()
+        with _env_creation_lock:
+            env = MultiObjectEnv(
+                n_objects_range=(n_obj_min, n_obj_max),
+                seed=seed + ep * 997,
+                render_mode=render_mode,
+            )
+            env.reset()
 
         obj_names = env.get_object_names()
         rng = np.random.default_rng(seed + ep * 997)
         target = obj_names[int(rng.integers(len(obj_names)))]
 
+        # If a pre-collected bbox cache is available, inject it directly.
+        # This ensures all horizons use the exact same VLM output per episode.
+        forced_bbox        = None
+        forced_bbox_source = "vlm_cached"
+        if bbox_cache is not None and ep in bbox_cache:
+            entry              = bbox_cache[ep]
+            forced_bbox        = entry["bbox"]
+            forced_bbox_source = entry["bbox_source"]
+            target             = entry["target_name"]  # redundant but explicit
+
         vlm_client = None
-        if use_vlm:
+        if use_vlm and forced_bbox is None:
             from vlm_client import VLMClient  # noqa: E402
             vlm_client = VLMClient(base_url=vlm_url, model_name=vlm_model)
 
@@ -329,6 +408,8 @@ def evaluate(
             use_gt_bbox=(not use_vlm) or use_gt_bbox,
             horizon=horizon,
             max_delta=max_delta,
+            forced_bbox=forced_bbox,
+            forced_bbox_source=forced_bbox_source,
         )
         ep_result["episode"] = ep
         ep_result["target_name"] = target
@@ -451,12 +532,38 @@ def main() -> None:
         print(f"{'='*70}\n")
         results = {}
 
+        # Pre-collect VLM bboxes ONCE so that every horizon uses the exact
+        # same perception output per episode (fair ablation).
+        shared_bbox_cache = None
+        if not args.use_gt_bbox:
+            try:
+                from vlm_client import VLMClient  # noqa: E402
+                probe = VLMClient(base_url=args.vlm_url, model_name=args.vlm_model)
+                if probe.is_available():
+                    print(f"\n[bbox-cache] Pre-collecting VLM bboxes for "
+                          f"{args.n_episodes} episodes (shared across all horizons)...")
+                    shared_bbox_cache = pre_collect_vlm_bboxes(
+                        n_episodes  = args.n_episodes,
+                        vlm_url     = args.vlm_url,
+                        vlm_model   = args.vlm_model,
+                        n_obj_min   = args.n_obj_min,
+                        n_obj_max   = args.n_obj_max,
+                        seed        = args.seed,
+                        render_mode = args.render_mode,
+                    )
+                else:
+                    print("[bbox-cache] VLM not reachable → will use GT bboxes for all horizons")
+            except Exception as e:
+                print(f"[bbox-cache] VLM init failed ({e}) → will use GT bboxes")
+
+        base_dir = Path(args.out_dir) if args.out_dir else Path("final_project/runs")
+
         for h in horizons:
             checkpoint = checkpoint_for_horizon(args.checkpoint, h)
-            out_dir = f"{args.out_dir}/vis_h{h}" if args.out_dir else f"final_project/runs/vis_h{h}"
+            out_dir = str(base_dir / f"vis_h{h}")
 
             print(f"\n{'='*70}")
-            print(f"Inference HORIZON={h}")
+            print(f"Inference HORIZON={h}  →  {out_dir}")
             print(f"{'='*70}\n")
 
             eval_kwargs = {
@@ -475,6 +582,7 @@ def main() -> None:
                 "save_vis": args.save_vis,
                 "horizon": h,
                 "max_delta": args.max_delta,
+                "bbox_cache": shared_bbox_cache,
             }
             summary = evaluate(**eval_kwargs)
             results[h] = {
@@ -496,8 +604,8 @@ def main() -> None:
             ms = res.get("mean_steps_success", 0)
             print(f"{h:<10} {sr:<12.1f} {md:<12.4f} {ms:<12.1f}")
 
-        # Save summary
-        summary_path = Path(args.out_dir).parent / "inference_summary.json" if args.out_dir else Path("final_project/runs/inference_summary.json")
+        summary_path = base_dir / "inference_summary.json"
+        base_dir.mkdir(parents=True, exist_ok=True)
         with open(summary_path, "w") as f:
             json.dump(results, f, indent=2)
         print(f"\nSummary saved to {summary_path}\n")

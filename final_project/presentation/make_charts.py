@@ -26,8 +26,8 @@ def load(kind: str):
     return sr, dist, steps
 
 
-gt_sr, gt_dist, gt_steps = load("gt_bbox")
-vlm_sr, vlm_dist, vlm_steps = load("vlm_bbox")
+gt_sr, gt_dist, gt_steps = load("gt_runs")
+vlm_sr, vlm_dist, vlm_steps = load("vlm_runs")
 
 GT_C = "#2a7de1"
 VLM_C = "#e8590c"
@@ -48,7 +48,7 @@ ax.set_xlabel("Planning horizon H", fontsize=11)
 ax.set_ylabel("Success rate (%)", fontsize=11)
 ax.set_title("Reaching success rate vs horizon", fontsize=12, fontweight="bold")
 ax.set_xticks(HORIZONS)
-ax.set_ylim(55, 105)
+ax.set_ylim(50, 100)
 ax.grid(alpha=0.3)
 ax.legend(fontsize=10, loc="lower left")
 
@@ -78,7 +78,7 @@ ax.bar_label(b2, fmt="%.0f%%", fontsize=9, padding=2)
 ax.set_xticks(x)
 ax.set_xticklabels([f"H={h}" for h in HORIZONS])
 ax.set_ylabel("Success rate (%)", fontsize=11)
-ax.set_ylim(0, 112)
+ax.set_ylim(0, 100)
 ax.set_title("Success rate: GT bbox vs VLM bbox across horizons",
              fontsize=13, fontweight="bold")
 ax.legend(fontsize=10)
